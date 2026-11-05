@@ -65,7 +65,7 @@ export function drawAnnotations(ctx, layout) {
     const label = item.label;
     if (label && !label.footer) {
       const lx = clamp(x + width / 2, label.x, label.x + label.width), ly = clamp(y + height / 2, label.y, label.y + label.height);
-      ctx.lineWidth = 1;
+      ctx.lineWidth = 2.5;
       ctx.beginPath(); ctx.moveTo(lx, ly); ctx.lineTo(clamp(lx, x, x + width), clamp(ly, y, y + height)); ctx.stroke(); ctx.lineWidth = 3;
     }
   }

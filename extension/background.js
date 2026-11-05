@@ -200,7 +200,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       const origin = approvedTarget(options.url, options.url);
       queue.add({ requestId: crypto.randomUUID(), sessionId: options.sessionId, approval: options.approval, origin, tabId: options.tabId, url: options.url, options });
       await advance(queue);
-      return { ...queue.status(options.sessionId), message: 'Approvals are queued. When this tab is selected with REC?, click the pinned Chrome Evidence icon once. Call capture_wait with sessionId and requestId; interact only when recording is true.' };
+      return { ...queue.status(options.sessionId), message: 'The page banner and REC? icon request the user’s toolbar approval. Immediately call capture_wait with sessionId, requestId and seconds:50. Do not ask the user for a chat reply or another confirmation. Chrome signals approval through capture_wait; continue when recording is true. Only after a full wait still awaiting approval, optionally give a non-blocking reminder and wait again.' };
     });
     if (message.type === 'approvalStatus') return transact(async queue => {
       await advance(queue);
