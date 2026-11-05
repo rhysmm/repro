@@ -1,3 +1,5 @@
+import { sourceCrop, frameContentRect } from './frame-geometry.js';
+import { layoutAnnotations, drawAnnotations } from './annotations.js';
 import { drawPointer, needsPointerOverlay } from './pointer.js';
 import { acquireMedia } from './capture-media.js';
 import { settings } from './config.js';
@@ -7,10 +9,8 @@ export function createRecorder(sessionId, background) {
 let media, tab, video, recording, completed, source = 'tab', active = true;
 const warnings = [];
 function cropFrame(context, geometry) {
-  const r = geometry.region;
-  const sx = video.videoWidth / geometry.viewport.width;
-  const sy = video.videoHeight / geometry.viewport.height;
-  context.drawImage(video, r.x * sx, r.y * sy, r.width * sx, r.height * sy, 0, 0, context.canvas.width, context.canvas.height);
+  const r = sourceCrop({ width: video.videoWidth, height: video.videoHeight }, geometry);
+  context.drawImage(video, r.x, r.y, r.width, r.height, 0, 0, context.canvas.width, context.canvas.height);
 }
 function canvasFor(geometry) {
   const canvas = document.createElement('canvas');
@@ -51,27 +51,16 @@ async function command(name, args = {}) {
     const canvas = canvasFor(geometry);
     const ctx = canvas.getContext('2d');
     cropFrame(ctx, geometry);
-    const scaleX = canvas.width / geometry.region.width, scaleY = canvas.height / geometry.region.height;
-    for (const h of geometry.highlights) {
-      const x = (h.rect.x - geometry.region.x) * scaleX, y = (h.rect.y - geometry.region.y) * scaleY;
-      const width = h.rect.width * scaleX, height = h.rect.height * scaleY;
-      ctx.strokeStyle = '#ef233c'; ctx.fillStyle = '#ef233c'; ctx.lineWidth = 3;
-      if (h.style === 'arrow') {
-        const endX = x + width / 2, endY = y + height / 2;
-        const startX = Math.max(8, x - 25), startY = Math.max(20, y - 25);
-        const angle = Math.atan2(endY - startY, endX - startX);
-        ctx.beginPath(); ctx.moveTo(startX, startY); ctx.lineTo(endX, endY);
-        ctx.moveTo(endX - 12 * Math.cos(angle - 0.5), endY - 12 * Math.sin(angle - 0.5)); ctx.lineTo(endX, endY); ctx.lineTo(endX - 12 * Math.cos(angle + 0.5), endY - 12 * Math.sin(angle + 0.5)); ctx.stroke();
-      } else ctx.strokeRect(x - 3, y - 3, width + 6, height + 6);
-      if (h.label) {
-        ctx.font = 'bold 14px sans-serif';
-        const labelX = Math.max(0, Math.min(x, canvas.width - ctx.measureText(h.label).width - 12));
-        const labelY = Math.max(20, y - 6);
-        ctx.fillRect(labelX, labelY - 18, ctx.measureText(h.label).width + 12, 22);
-        ctx.fillStyle = 'white'; ctx.fillText(h.label, labelX + 6, labelY - 2);
-      }
-    }
-    return upload('screenshot', await new Promise(resolve => canvas.toBlob(resolve, 'image/png')), { name: args.name, geometry, warnings: [...warnings] });
+    ctx.font = 'bold 14px sans-serif';
+    const annotations = layoutAnnotations(geometry, canvas, text => ctx.measureText(text).width);
+    const output = document.createElement('canvas'); output.width = canvas.width; output.height = annotations.height;
+    const annotated = output.getContext('2d');
+    annotated.fillStyle = '#fff'; annotated.fillRect(0, 0, output.width, output.height);
+    annotated.drawImage(canvas, 0, 0);
+    drawAnnotations(annotated, annotations);
+    const frame = { width: video.videoWidth, height: video.videoHeight };
+    const capture = { frame, content: frameContentRect(frame, geometry.viewport) };
+    return upload('screenshot', await new Promise(resolve => output.toBlob(resolve, 'image/png')), { name: args.name, geometry, capture, annotations, warnings: [...warnings] });
   }
   if (name !== 'start') throw new Error(`Unknown command: ${name}`);
   if (recording || completed) throw new Error('Retrieve the previous recording with stop first.');
@@ -110,8 +99,6 @@ async function command(name, args = {}) {
       ctx.globalAlpha = 1;
     }
     if (state.pointer && needsPointerOverlay(source, active)) drawPointer(ctx, state.pointer, geometry);
-    ctx.fillStyle = '#111827cc'; ctx.fillRect(0, canvas.height - 22, 125, 22);
-    ctx.fillStyle = 'white'; ctx.font = '12px monospace'; ctx.fillText(`elapsed ${t.toFixed(1)}s`, 8, canvas.height - 7);
   }, 1000 / 15);
   state.limit = setTimeout(() => finish().catch(error => { warnings.push(error.message); throw error; }), args.maxSeconds * 1000);
   return { sessionId, recording: true, region: geometry.region, viewport: geometry.viewport, maxSeconds: args.maxSeconds, preserveTiming: args.preserveTiming };

@@ -59,7 +59,8 @@
     const matches = [];
     for (const { doc, offset } of documents()) for (const root of roots(doc)) {
       let elements;
-      if (target.selector) elements = [...root.querySelectorAll(target.selector)];
+      if (target.text) elements = [...root.querySelectorAll('*')].filter(element => (element.innerText || element.textContent || '').trim().replace(/\s+/g, ' ') === target.text && ![...element.children].some(child => (child.innerText || child.textContent || '').trim().replace(/\s+/g, ' ') === target.text));
+      else if (target.selector) elements = [...root.querySelectorAll(target.selector)];
       else if (target.testId) elements = [...root.querySelectorAll(`[data-testid="${CSS.escape(target.testId)}"]`)];
       else elements = [...root.querySelectorAll('*')].filter(element => role(element) === target.role && accessibleName(element) === target.name);
       for (const element of elements) {
