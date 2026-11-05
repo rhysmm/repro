@@ -1,0 +1,61 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { Sessions } from '../extension/sessions.js';
+import { ApprovalQueue } from '../extension/approval-queue.js';
+import { schemas } from '../src/schema.js';
+const request = (sessionId, tabId) => ({ sessionId, tabId, requestId: `request-${sessionId}`, approval: 'toolbar' });
+test('approvals are FIFO and queued requests get a fresh approval deadline', () => {
+  const q = new ApprovalQueue();
+  q.add(request('a', 1)); q.add(request('b', 2));
+  assert.equal(q.present(0).sessionId, 'a');
+  assert.equal(q.status('b').queuePosition, 2);
+  assert.equal(q.present(5000), undefined);
+  q.claim('request-a');
+  assert.equal(q.present(130000), undefined);
+  Object.assign(q.get('a'), { state: 'recording', enabled: true });
+  assert.equal(q.present(140000).sessionId, 'b');
+  assert.equal(q.get('b').expiresAt, 260000);
+  assert.equal(q.get('a').enabled, true);
+});
+test('expiry and cancellation allow the next request without affecting enabled tabs', () => {
+  const q = new ApprovalQueue();
+  q.add(request('a', 1)); q.add(request('b', 2)); q.add(request('c', 3));
+  q.present(0);
+  assert.equal(q.expire(120001).sessionId, 'a');
+  assert.equal(q.present(120001).sessionId, 'b');
+  q.release('b');
+  assert.equal(q.present(130000).sessionId, 'c');
+  q.claim('request-c');
+  assert.throws(() => q.release('c'), /starting/);
+});
+test('wrong requests cannot claim the presented approval or duplicate a tab', () => {
+  const q = new ApprovalQueue();
+  q.add(request('a', 1)); q.add(request('b', 2)); q.present();
+  assert.throws(() => q.claim('request-b'), /no longer/);
+  assert.throws(() => q.add(request('c', 1)), /another session/);
+  assert.throws(() => q.add(request('a', 1)), /pending/);
+  assert.equal(q.get('a').state, 'awaiting_approval');
+});
+test('session operations overlap across tabs but cannot race within a tab', async () => {
+  const sessions = new Sessions(() => ({ status: () => ({ enabled: true, recording: false }) }));
+  const a = sessions.create(1), b = sessions.create(2);
+  let unblock;
+  const running = sessions.run(a.sessionId, () => new Promise(resolve => { unblock = resolve; }));
+  assert.equal(await sessions.run(b.sessionId, s => s.tabId), 2);
+  await assert.rejects(sessions.run(a.sessionId, () => 'wrong'), /in progress/);
+  assert.throws(() => sessions.create(1), /already belongs/);
+  assert.throws(() => sessions.get(crypto.randomUUID()), /Unknown session/);
+  assert.deepEqual(sessions.counts(), { sessions: 2, enabled: 2, recording: 0 });
+  unblock('finished'); await running;
+  sessions.remove(a.sessionId);
+  assert.equal(sessions.get(b.sessionId).tabId, 2);
+  assert.equal(sessions.create(1).tabId, 1);
+});
+test('mutating tools require a session handle and status never defaults to an owner', () => {
+  assert.throws(() => schemas.stop.parse({}));
+  assert.throws(() => schemas.release.parse({}));
+  assert.throws(() => schemas.screenshot.parse({}));
+  assert.throws(() => schemas.wait.parse({ requestId: crypto.randomUUID() }));
+  assert.deepEqual(schemas.status.parse({}), {});
+  assert.equal(schemas.start.parse({ sessionId: crypto.randomUUID() }).maxSeconds, 90);
+});

@@ -1,7 +1,11 @@
 import { approvedTarget, verifyToolbarApproval } from './approval-state.js';
-let enabledTab, creatingOffscreen;
+import { ApprovalQueue } from './approval-queue.js';
+let creatingOffscreen;
+let mutations = Promise.resolve();
 async function offscreen(message) {
-  return chrome.runtime.sendMessage({ destination: 'offscreen', ...message });
+  const response = await chrome.runtime.sendMessage({ destination: 'offscreen', ...message });
+  if (response?.error) throw new Error(response.error);
+  return response;
 }
 async function inject(tabId) {
   await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
@@ -15,163 +19,183 @@ async function ensureOffscreen() {
   try { await creatingOffscreen; }
   finally { creatingOffscreen = undefined; }
 }
-chrome.runtime.onInstalled.addListener(() => { ensureOffscreen(); });
-chrome.runtime.onStartup.addListener(() => { ensureOffscreen(); });
-ensureOffscreen();
-
-async function enable(tab) {
-  const generated = await fetch(chrome.runtime.getURL('config.js')).catch(error => {
-    if (error instanceof TypeError) throw new Error('Load chrome-evidence/dist/extension, not the source extension folder.');
+async function badge(tabId, text, title) {
+  try { await chrome.action.setBadgeText({ tabId, text }); }
+  catch (error) {
+    if (/No tab with id|Invalid tab ID/.test(error.message)) return;
     throw error;
+  }
+  await chrome.action.setBadgeBackgroundColor({ tabId, color: text === 'REC?' ? '#b45309' : '#2563eb' });
+  await chrome.action.setTitle({ tabId, title });
+}
+function transact(action) {
+  const next = mutations.then(async () => {
+    const { captureRequests = [] } = await chrome.storage.session.get('captureRequests');
+    const queue = new ApprovalQueue(captureRequests);
+    try { return await action(queue); }
+    finally { await chrome.storage.session.set({ captureRequests: queue.requests }); }
   });
-  if (!generated.ok) throw new Error('Load chrome-evidence/dist/extension, not the source extension folder.');
-  if (!/^https?:/.test(tab.url || '')) throw new Error('Open a normal HTTP or HTTPS page first.');
+  // The caller receives errors; subsequent independent transactions must still run.
+  mutations = next.then(() => undefined, () => undefined);
+  return next;
+}
+async function advance(queue) {
+  const expired = queue.expire();
+  if (expired) await badge(expired.tabId, '', 'Capture approval expired');
+  let request;
+  while ((request = queue.present())) {
+    try {
+      const target = await chrome.tabs.get(request.tabId);
+      if (target.url) approvedTarget(request.url, target.url);
+      await chrome.tabs.update(target.id, { active: true });
+      await chrome.windows.update(target.windowId, { focused: true });
+      await badge(target.id, 'REC?', `Approve recording: ${request.url}`);
+      if (request.approval === 'picker') {
+        const window = await chrome.windows.create({ url: chrome.runtime.getURL(`approval.html?requestId=${request.requestId}`), type: 'popup', width: 560, height: 540 });
+        request.windowId = window.id;
+      }
+      return;
+    } catch (error) {
+      // Surface presentation failures to the requesting agent and advance the queue.
+      Object.assign(request, { state: 'failed', error: error.message });
+    }
+  }
+}
+async function initialize() {
   await ensureOffscreen();
-  const existing = await offscreen({ type: 'status' });
-  if (existing?.enabled) throw new Error('A tab is already enabled. Use capture release before enabling another.');
-  await inject(tab.id);
-  const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id });
-  const result = await offscreen({ type: 'enable', streamId, tab: { id: tab.id, title: tab.title, url: tab.url } });
-  if (result?.error) throw new Error(result.error);
-  enabledTab = tab.id;
-  await chrome.storage.session.set({ enabledTab });
-  await chrome.action.setBadgeText({ text: 'ON' });
-  await chrome.action.setBadgeBackgroundColor({ color: '#2563eb' });
-  await chrome.action.setTitle({ title: 'Evidence capture enabled' });
+  await chrome.alarms.create('approval-expiry', { periodInMinutes: 0.5 });
+}
+chrome.runtime.onInstalled.addListener(initialize);
+chrome.runtime.onStartup.addListener(initialize);
+initialize();
+chrome.alarms.onAlarm.addListener(alarm => {
+  if (alarm.name === 'approval-expiry') return transact(advance);
+});
+async function approve(request, target) {
+  try {
+    approvedTarget(request.url, target.url);
+    await inject(target.id);
+    let capture;
+    if (request.approval === 'picker') {
+      await chrome.scripting.executeScript({ target: { tabId: target.id }, func: (handle, permittedOrigin) => {
+        if (!navigator.mediaDevices?.setCaptureHandleConfig) throw new Error('This page cannot verify tab sharing. Use HTTPS or localhost.');
+        navigator.mediaDevices.setCaptureHandleConfig({ handle, exposeOrigin: false, permittedOrigins: [permittedOrigin] });
+      }, args: [request.requestId, chrome.runtime.getURL('').replace(/\/$/, '')] });
+      capture = { source: 'display', expectedHandle: request.requestId };
+    } else capture = { streamId: await chrome.tabCapture.getMediaStreamId({ targetTabId: target.id }) };
+    await offscreen({ type: 'enable', sessionId: request.sessionId, ...capture, tab: { id: target.id, title: target.title, url: target.url } });
+    // Route geometry and input to this tab before starting its first clip.
+    await transact(queue => { queue.get(request.sessionId).enabled = true; });
+    await offscreen({ type: 'approvedStart', sessionId: request.sessionId, options: request.options });
+    await transact(async queue => {
+      queue.get(request.sessionId).state = 'recording';
+      await badge(target.id, 'ON', 'Evidence capture enabled for this tab');
+      await advance(queue);
+    });
+    return { state: 'recording' };
+  } catch (error) {
+    await transact(async queue => {
+      Object.assign(queue.get(request.sessionId), { state: 'failed', error: error.message });
+      await badge(target.id, 'ERR', error.message);
+      await advance(queue);
+    });
+    throw error;
+  }
 }
 chrome.action.onClicked.addListener(tab => {
   const run = async () => {
-    const { captureRequest: request } = await chrome.storage.session.get('captureRequest');
-    if (request?.state === 'awaiting_approval') {
-      verifyToolbarApproval(request, tab);
-      await chrome.storage.session.set({ captureRequest: { ...request, state: 'starting' } });
-      try {
-        await enable(tab);
-        const started = await offscreen({ type: 'approvedStart', options: request.options });
-        if (started?.error) throw new Error(started.error);
-        await chrome.storage.session.set({ captureRequest: { ...request, state: 'recording' } });
-      } catch (error) {
-        await chrome.storage.session.set({ captureRequest: { ...request, state: 'failed', error: error.message } });
-        throw error;
-      }
-      return;
-    }
-    await enable(tab);
+    const request = await transact(async queue => {
+      await advance(queue);
+      const current = queue.current();
+      if (!current) return;
+      verifyToolbarApproval(current, tab);
+      return { ...queue.claim(current.requestId) };
+    });
+    if (request) await approve(request, tab);
   };
   run().catch(async error => {
-    await chrome.action.setBadgeText({ text: 'ERR' });
-    await chrome.action.setTitle({ title: error.message });
+    await chrome.action.setTitle({ tabId: tab.id, title: error.message });
     throw error;
   });
 });
 chrome.tabs.onUpdated.addListener((tabId, change) => {
   if (change.status !== 'complete') return;
-  chrome.storage.session.get('enabledTab').then(async state => {
-    if (tabId === state.enabledTab) await inject(tabId);
-  }).catch(error => offscreen({ type: 'warning', message: `Page instrumentation unavailable: ${error.message}` }));
+  const run = async () => {
+    const { captureRequests = [] } = await chrome.storage.session.get('captureRequests');
+    const request = captureRequests.find(r => r.tabId === tabId && r.enabled);
+    if (!request) return;
+    try { await inject(tabId); }
+    catch (error) { await offscreen({ type: 'warning', sessionId: request.sessionId, message: `Page instrumentation unavailable: ${error.message}` }); throw error; }
+  };
+  return run();
 });
+chrome.tabs.onRemoved.addListener(tabId => transact(async queue => {
+  for (const request of queue.requests.filter(r => r.tabId === tabId)) Object.assign(request, { state: 'closed', enabled: false });
+  await advance(queue);
+}));
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (message.destination !== 'background') return;
   const run = async () => {
-    const state = await chrome.storage.session.get('enabledTab');
-    if (message.type === 'requestCapture') {
-      const options = message.options;
-      const stored = await chrome.storage.session.get('captureRequest');
-      if (['awaiting_approval', 'starting'].includes(stored.captureRequest?.state)) throw new Error('A capture request is already awaiting approval.');
-      const requestId = crypto.randomUUID();
-      const origin = approvedTarget(options.url, options.url);
-      const request = { requestId, approval: options.approval || 'toolbar', expiresAt: Date.now() + 120000, origin, tabId: options.tabId, url: options.url, options, state: 'awaiting_approval' };
-      await chrome.storage.session.set({ captureRequest: request });
-      if (request.approval === 'toolbar') {
-        try {
-          const target = await chrome.tabs.get(request.tabId);
-          if (target.url) approvedTarget(request.url, target.url);
-          await chrome.tabs.update(target.id, { active: true });
-          await chrome.windows.update(target.windowId, { focused: true });
-          await chrome.action.setBadgeText({ text: 'REC?' });
-          await chrome.action.setBadgeBackgroundColor({ color: '#b45309' });
-          await chrome.action.setTitle({ title: `Approve recording: ${request.url}` });
-        } catch (error) {
-          await chrome.storage.session.set({ captureRequest: { ...request, state: 'failed', error: error.message } });
-          throw error;
-        }
-        return { state: request.state, requestId, tabId: request.tabId, message: 'Click the pinned Chrome Evidence toolbar icon once on the selected tab to approve and start recording. No tab picker or popup. Call capture_wait before interacting.' };
-      }
-      const window = await chrome.windows.create({ url: chrome.runtime.getURL(`approval.html?requestId=${requestId}`), type: 'popup', width: 560, height: 540 });
-      await chrome.storage.session.set({ captureRequest: { ...request, windowId: window.id } });
-      return { state: request.state, requestId, tabId: request.tabId, message: 'Approve the capture request in Chrome, then select the requested tab in its sharing picker. Call capture_wait with requestId; do not interact until recording starts.' };
-    }
-    if (message.type === 'approvalStatus') {
-      let { captureRequest } = await chrome.storage.session.get('captureRequest');
-      if (captureRequest?.approval === 'toolbar' && captureRequest.state === 'awaiting_approval' && Date.now() > captureRequest.expiresAt) {
-        captureRequest = { ...captureRequest, state: 'expired' };
-        await chrome.storage.session.set({ captureRequest });
-        await chrome.action.setBadgeText({ text: '' });
-      }
-      return captureRequest ? { state: captureRequest.state, requestId: captureRequest.requestId, tabId: captureRequest.tabId, error: captureRequest.error, reason: captureRequest.reason } : null;
-    }
-    if (['approvalDetails', 'approve', 'decline'].includes(message.type)) {
-      if (!sender.url?.startsWith(chrome.runtime.getURL('approval.html'))) throw new Error('Approval must come from the extension approval page.');
-      const { captureRequest: request } = await chrome.storage.session.get('captureRequest');
-      if (!request || request.requestId !== message.requestId) throw new Error('This capture request has expired.');
-      if (message.type === 'approvalDetails') return { url: request.url, origin: request.origin };
-      if (message.type === 'decline') {
-        if (request.state === 'awaiting_approval') await chrome.storage.session.set({ captureRequest: { ...request, state: 'declined', reason: message.reason || 'picker_cancelled' } });
-        return { state: 'declined' };
-      }
-      if (request.state !== 'awaiting_approval') throw new Error('This request is no longer awaiting approval.');
-      const target = await chrome.tabs.get(request.tabId);
-      approvedTarget(request.url, target.url);
-      await inject(target.id);
-      await chrome.scripting.executeScript({ target: { tabId: target.id }, func: (handle, permittedOrigin) => {
-        if (!navigator.mediaDevices?.setCaptureHandleConfig) throw new Error('This page cannot verify tab sharing. Use HTTPS or localhost.');
-        navigator.mediaDevices.setCaptureHandleConfig({ handle, exposeOrigin: false, permittedOrigins: [permittedOrigin] });
-      }, args: [request.requestId, chrome.runtime.getURL('').replace(/\/$/, '')] });
-      const result = await offscreen({ type: 'enable', source: 'display', expectedHandle: request.requestId, tab: { id: target.id, title: target.title, url: target.url } });
-      if (result?.error) {
-        await chrome.storage.session.set({ captureRequest: { ...request, state: 'failed', error: result.error } });
-        throw new Error(result.error);
-      }
-      enabledTab = target.id;
-      await chrome.storage.session.set({ enabledTab });
-      const started = await offscreen({ type: 'approvedStart', options: request.options });
-      if (started?.error) {
-        await chrome.storage.session.set({ captureRequest: { ...request, state: 'failed', error: started.error } });
-        throw new Error(started.error);
-      }
-      await chrome.storage.session.set({ captureRequest: { ...request, state: 'recording' } });
-      await chrome.action.setBadgeText({ text: 'ON' });
-      await chrome.action.setTitle({ title: 'Evidence capture enabled' });
-      return { state: 'recording' };
-    }
     if (message.type === 'event') {
-      if (sender.tab?.id !== state.enabledTab) return;
-      return offscreen({ type: 'event', event: message.event });
+      const { captureRequests = [] } = await chrome.storage.session.get('captureRequests');
+      const request = captureRequests.find(r => r.tabId === sender.tab?.id && r.enabled);
+      if (request) return offscreen({ type: 'event', sessionId: request.sessionId, event: message.event });
+      return;
     }
     if (message.type === 'resolve') {
-      if (!state.enabledTab) throw new Error('Request capture with tabId and url first.');
-      const result = await chrome.tabs.sendMessage(state.enabledTab, { type: 'resolve', options: message.options });
+      const { captureRequests = [] } = await chrome.storage.session.get('captureRequests');
+      const request = captureRequests.find(r => r.sessionId === message.options.sessionId && r.enabled);
+      if (!request) throw new Error('This session is not enabled.');
+      const result = await chrome.tabs.sendMessage(request.tabId, { type: 'resolve', options: message.options });
       if (result.error) throw new Error(result.error);
       return result;
     }
-    if (message.type === 'released') {
-      await chrome.storage.session.remove('enabledTab');
-      enabledTab = undefined;
-      await chrome.action.setBadgeText({ text: '' });
-      await chrome.action.setTitle({ title: 'Enable evidence capture for this tab' });
+    if (message.type === 'requestCapture') return transact(async queue => {
+      const options = message.options;
+      const origin = approvedTarget(options.url, options.url);
+      queue.add({ requestId: crypto.randomUUID(), sessionId: options.sessionId, approval: options.approval, origin, tabId: options.tabId, url: options.url, options });
+      await advance(queue);
+      return { ...queue.status(options.sessionId), message: 'Approvals are queued. When this tab is selected with REC?, click the pinned Chrome Evidence icon once. Call capture_wait with sessionId and requestId; interact only when recording is true.' };
+    });
+    if (message.type === 'approvalStatus') return transact(async queue => {
+      await advance(queue);
+      return queue.status(message.options.sessionId);
+    });
+    if (message.type === 'released') return transact(async queue => {
+      const request = queue.release(message.options.sessionId);
+      await badge(request.tabId, '', 'Chrome Evidence');
+      await advance(queue);
+      return { released: true };
+    });
+    if (['approvalDetails', 'approve', 'decline'].includes(message.type)) {
+      if (!sender.url?.startsWith(chrome.runtime.getURL('approval.html'))) throw new Error('Approval must come from the extension approval page.');
+      const request = await transact(async queue => {
+        await advance(queue);
+        const current = queue.current();
+        if (!current || current.requestId !== message.requestId || current.approval !== 'picker') throw new Error('This capture request has expired.');
+        if (message.type === 'approve') queue.claim(current.requestId);
+        if (message.type === 'decline') {
+          if (current.state !== 'awaiting_approval') throw new Error('Approval is already starting.');
+          Object.assign(current, { state: 'declined', error: message.reason || 'user_declined' });
+          await badge(current.tabId, '', 'Capture declined');
+          await advance(queue);
+        }
+        return { ...current };
+      });
+      if (message.type === 'approvalDetails') return { url: request.url, origin: request.origin };
+      if (message.type === 'decline') return { state: 'declined' };
+      return approve(request, await chrome.tabs.get(request.tabId));
     }
+    throw new Error(`Unknown background command: ${message.type}`);
   };
-  run().then(result => respond({ result })).catch(async error => {
-    if (message.type === 'approve') {
-      const { captureRequest } = await chrome.storage.session.get('captureRequest');
-      if (captureRequest?.requestId === message.requestId) await chrome.storage.session.set({ captureRequest: { ...captureRequest, state: 'failed', error: error.message } });
-    }
-    respond({ error: error.message });
-  });
+  run().then(result => respond({ result })).catch(error => respond({ error: error.message }));
   return true;
 });
-
-chrome.windows.onRemoved.addListener(async windowId => {
-  const { captureRequest } = await chrome.storage.session.get('captureRequest');
-  if (captureRequest?.windowId === windowId && captureRequest.state === 'awaiting_approval') await chrome.storage.session.set({ captureRequest: { ...captureRequest, state: 'declined', reason: 'approval_window_closed' } });
-});
+chrome.windows.onRemoved.addListener(windowId => transact(async queue => {
+  const current = queue.current();
+  if (current?.windowId === windowId && current.state === 'awaiting_approval') {
+    Object.assign(current, { state: 'declined', error: 'approval_window_closed' });
+    await badge(current.tabId, '', 'Capture declined');
+    await advance(queue);
+  }
+}));
