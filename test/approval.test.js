@@ -43,3 +43,18 @@ test('native picker failures retain their original explanation', async () => {
   const error = new Error('Permission denied by the browser');
   await assert.rejects(acquireMedia({ getDisplayMedia: async () => { throw error; } }, { source: 'display' }), value => value === error);
 });
+
+test('toolbar approval binds the click to the requested tab, URL, and expiry', async () => {
+  const { verifyToolbarApproval } = await import('../extension/approval-state.js');
+  const request = { approval: 'toolbar', tabId: 42, url: 'https://example.com/test', expiresAt: 2000 };
+  assert.doesNotThrow(() => verifyToolbarApproval(request, { id: 42, url: request.url }, 1000));
+  assert.throws(() => verifyToolbarApproval(request, { id: 43, url: request.url }, 1000), /Wrong tab/);
+  assert.throws(() => verifyToolbarApproval(request, { id: 42, url: 'https://example.com/other' }, 1000), /navigated/);
+  assert.throws(() => verifyToolbarApproval(request, { id: 42, url: request.url }, 2001), /expired/);
+  assert.throws(() => verifyToolbarApproval({ ...request, approval: 'picker' }, { id: 42, url: request.url }, 1000), /sharing approval/);
+});
+
+test('agent requests default to one-click approval and retain the picker alternative', () => {
+  assert.equal(schemas.start.parse({}).approval, 'toolbar');
+  assert.equal(schemas.start.parse({ approval: 'picker' }).approval, 'picker');
+});

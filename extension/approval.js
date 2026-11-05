@@ -15,7 +15,8 @@ approve.addEventListener('click', async () => {
     if (!granted) { await message('decline', { reason: 'site_access_denied' }); status.textContent = 'Site access was declined. Nothing is recording.'; return; }
     status.textContent = 'Select the requested tab in Chrome’s sharing picker.';
     const result = await message('approve');
-    status.textContent = result.state === 'recording' ? 'Recording started. You can close this window.' : result.error || 'Capture was cancelled.';
+    if (result.state === 'recording') { window.close(); return; }
+    status.textContent = result.error || 'Capture was cancelled.';
     cancel.textContent = 'Close';
   } catch (error) {
     status.textContent = error.message;

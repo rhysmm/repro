@@ -21,16 +21,18 @@ npm start
 
 In Chrome, open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select this repository's `dist/extension` folder. The extension connects to the local service automatically.
 
-The agent supplies a Chrome tab ID and its exact current URL to `capture_start`. An approval window opens. Click **Approve & choose tab**, grant access to that site if prompted, then select the requested tab in Chrome's sharing picker and click **Share**. Recording starts automatically. No toolbar click or agent computer-use action is required to initiate capture. Chrome/macOS may require screen-recording permission and a Chrome restart on first use.
+Pin the Chrome Evidence toolbar icon. The agent supplies a Chrome tab ID and its exact current URL to `capture_start`. The extension brings that tab forward and shows **REC?**. Click the toolbar icon once to approve: recording starts automatically, with no tab picker or popup. Clicking on another tab or after the target URL changes is rejected. Requests expire after two minutes. The agent initiates this entirely through the capture tool; no agent computer use is required for approval.
 
-The selected tab is verified using its capture handle before recording starts; choosing another tab fails closed. The stream remains active between clips until `release`, the tab closes, or Chrome stops sharing. Site permissions are requested per origin on approval. No microphone or tab audio is captured. The legacy toolbar activation remains available.
+The alternative `approval: "picker"` flow opens an approval window, requests site access when needed, and shows Chrome's tab-sharing picker. It verifies the selected tab using its capture handle and closes the approval window automatically after recording starts. Chrome/macOS may require screen-recording permission and a Chrome restart on first use of that flow.
+
+The stream remains active between clips until `release`, the tab closes, or Chrome stops sharing. No microphone or tab audio is captured. Clicking the toolbar without a pending request retains the legacy enable-only behavior.
 
 The generated extension contains a local pairing token. `.runtime/`, `dist/`, and captured `artifacts/` are ignored by Git. Run setup separately on each machine; do not distribute a generated extension containing your pairing token. The service binds only to `127.0.0.1:47321`.
 
 ## Agent workflow
 
 1. `capture_start` with `tabId`, exact current `url`, and optional region.
-2. If it returns `awaiting_approval`, call `capture_wait` with the returned `requestId`. Begin interactions only when `recording` is true. A pending request can be waited on again.
+2. The user clicks the toolbar icon once. If start returns `awaiting_approval`, call `capture_wait` with the returned `requestId`. Begin interactions only when `recording` is true. A pending request can be waited on again.
 3. Interact using the normal Chrome browser tools.
 4. `capture_stop` to receive the clip, original, and manifest paths.
 5. Start additional clips or use `capture_screenshot` for annotated static images. The same enabled tab needs no additional approval between clips.
@@ -87,7 +89,7 @@ The capture service (`npm start`) must also be running. The MCP process only pro
 
 ## Timing and evidence fidelity
 
-The recorder samples a downscaled clean crop five times per second. Changes above a small area/color threshold and actual page input events identify activity. It retains 0.6 seconds before and 0.7 seconds after interactions, and collapses idle gaps of at least 0.8 seconds between retained activity windows. Visual changes retain their own context. The initial 0.8 seconds and final 0.6 seconds remain. Small blinking carets generally do not retain an entire gap. The recording itself is 15fps; click rings, pointer, and the elapsed-time clock are composed into the output, not injected into the page. Click rings fade over 0.45 seconds. The pointer is reconstructed from observed page input positions and remains at the last observed position between events; it is an evidence overlay, not a guaranteed reproduction of the OS cursor shape. Pointer movement alone does not add activity events to the trimming timeline. Chrome may still supply its native cursor in the source stream.
+The recorder samples a downscaled clean crop five times per second. Changes above a small area/color threshold and actual page input events identify activity. It retains 0.6 seconds before and 0.7 seconds after interactions, and collapses idle gaps of at least 0.8 seconds between retained activity windows. Visual changes retain their own context. The initial 0.8 seconds and final 0.6 seconds remain. Small blinking carets generally do not retain an entire gap. The recording itself is 15fps; click rings, pointer, and the elapsed-time clock are composed into the output, not injected into the page. Click rings fade over 0.45 seconds. With the sharing-picker flow, the pointer is reconstructed from observed page input positions and remains at the last observed position between events; it is an evidence overlay, not a guaranteed reproduction of the OS cursor shape. Pointer movement alone does not add activity events to the trimming timeline. The direct toolbar flow uses Chrome’s native cursor without the extra overlay. Chrome may still supply its native cursor in the sharing-picker source stream.
 
 Every cut shows the omitted duration. `manifest.json` records the original-to-edited timeline, input timestamps, crop, and source URL. `original.webm` preserves the entire cropped recording. `preserveTiming: true` disables trimming for performance bugs or subtle visual changes. The heuristic cannot distinguish agent thinking from an application freeze; use the original and timestamps when timing is evidence. It does not remove all animations, spinners, or large repetitive changes.
 

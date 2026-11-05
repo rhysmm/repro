@@ -3,7 +3,7 @@ import { acquireMedia } from './capture-media.js';
 import { settings } from './config.js';
 import { visualChange } from './analysis.js';
 const base = `http://127.0.0.1:${settings.port}`;
-let socket, media, tab, video, recording, completed, busy = false;
+let socket, media, tab, video, recording, completed, source = 'tab', busy = false;
 const warnings = [];
 function connect() {
   socket = new WebSocket(`ws://127.0.0.1:${settings.port}`);
@@ -55,7 +55,7 @@ async function command(name, args = {}) {
     const deadline = Date.now() + args.seconds * 1000;
     let approval = await background('approvalStatus');
     if (approval?.requestId !== args.requestId) throw new Error('Unknown capture request.');
-    while (approval.state === 'awaiting_approval' && Date.now() < deadline) {
+    while (['awaiting_approval', 'starting'].includes(approval.state) && Date.now() < deadline) {
       await new Promise(resolve => setTimeout(resolve, 250));
       approval = await background('approvalStatus');
       if (approval?.requestId !== args.requestId) throw new Error('Capture request was replaced.');
@@ -145,7 +145,7 @@ async function command(name, args = {}) {
       ctx.beginPath(); ctx.arc(x, y, 22 + (t - event.t) * 18, 0, Math.PI * 2); ctx.stroke();
       ctx.globalAlpha = 1;
     }
-    if (state.pointer) drawPointer(ctx, state.pointer, geometry);
+    if (state.pointer && source === 'display') drawPointer(ctx, state.pointer, geometry);
     ctx.fillStyle = '#111827cc'; ctx.fillRect(0, canvas.height - 22, 125, 22);
     ctx.fillStyle = 'white'; ctx.font = '12px monospace'; ctx.fillText(`elapsed ${t.toFixed(1)}s`, 8, canvas.height - 7);
   }, 1000 / 15);
@@ -159,7 +159,7 @@ async function finish() {
   state.recorder.stop();
   await state.done;
   state.stream.getTracks().forEach(track => track.stop());
-  completed = { blob: new Blob(state.chunks, { type: state.recorder.mimeType }), metadata: { geometry: state.geometry, duration: (Date.now() - state.started) / 1000, events: state.events, samples: state.samples, preserveTiming: state.args.preserveTiming, pointerRendering: 'reconstructed-from-page-events', warnings: state.warnings } };
+  completed = { blob: new Blob(state.chunks, { type: state.recorder.mimeType }), metadata: { geometry: state.geometry, duration: (Date.now() - state.started) / 1000, events: state.events, samples: state.samples, preserveTiming: state.args.preserveTiming, pointerRendering: source === 'display' ? 'reconstructed-from-page-events' : 'native', warnings: state.warnings } };
   recording = null;
 }
 chrome.runtime.onMessage.addListener((message, _sender, respond) => {
@@ -180,6 +180,7 @@ chrome.runtime.onMessage.addListener((message, _sender, respond) => {
     if (message.type === 'approvedStart') return command('start', message.options);
     if (message.type === 'enable') {
       const candidate = await acquireMedia(navigator.mediaDevices, message);
+      source = message.source || 'tab';
       media = candidate;
       tab = message.tab;
       video = document.createElement('video'); video.muted = true; video.srcObject = media;

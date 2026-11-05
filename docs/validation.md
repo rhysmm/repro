@@ -50,3 +50,10 @@ Lint and all 15 automated tests pass. Wrong-tab selection is covered by unit tes
 ## Pointer visibility (0.2.3)
 
 The live 0.2.2 test confirmed that Chrome reported cursor=motion despite a cursor=always request; removing the ring fill alone did not fix missing cursors. Version 0.2.3 draws a persistent pointer above a thin, unfilled ring using observed page pointer positions. In a 320x262 Channels-panel recording, frame inspection at 8fps showed the pointer present during both clicks and after both rings faded. The source was 23.171 seconds and the trimmed timeline 4.237 seconds, with two clicks. Pointer-only events are excluded from the activity event list. The recording manifest identifies the reconstructed pointer. Native OS cursor shape fidelity and all possible native/overlay interactions are not guaranteed.
+
+
+## One-click approval (0.3.0)
+
+The agent supplied the Sunny Today Chrome tab ID, exact URL, and Channels element crop. The extension selected the requested tab and displayed REC?. A single user toolbar click granted Chrome's tab capture permission and automatically started the requested clip. No approval window or sharing picker was opened. The resulting H.264 MP4 is 320x262, contains both clicks, and trims 26.835 seconds to about 4.5 seconds. Seventeen tests and lint pass, including wrong-tab, changed-URL, expired-request, and picker-mode rejection checks for toolbar approval. Those rejection paths were unit-tested, not manually exercised in Chrome. The retained picker flow now closes its window on recording success; that new auto-close branch has not been live-tested.
+
+Frame inspection also showed that direct tab capture already includes Chrome's cursor, causing a duplicate with the reconstructed overlay. The overlay is now limited to display/picker capture; direct toolbar capture uses the native cursor. This small follow-up passed lint/tests but requires extension reload and has not been re-recorded live.
