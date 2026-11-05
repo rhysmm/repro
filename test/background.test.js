@@ -4,7 +4,7 @@ const listeners = {};
 const event = name => ({ addListener: fn => { listeners[name] = fn; } });
 const stored = {};
 const focused = [], forwarded = [], starts = [], badges = new Map();
-const tabs = new Map([[1, { id: 1, windowId: 1, url: 'https://example.com/a' }], [2, { id: 2, windowId: 1, url: 'https://example.com/b' }]]);
+const tabs = new Map([[1, { id: 1, windowId: 1, active: false, url: 'https://example.com/a' }], [2, { id: 2, windowId: 1, active: true, url: 'https://example.com/b' }]]);
 globalThis.chrome = {
   runtime: {
     onInstalled: event('installed'), onStartup: event('startup'), onMessage: event('message'),
@@ -21,7 +21,7 @@ globalThis.chrome = {
   alarms: { create: async () => {}, onAlarm: event('alarm') },
   tabs: {
     get: async id => tabs.get(id), update: async id => { focused.push(id); },
-    sendMessage: async id => ({ tabId: id }), onUpdated: event('updated'), onRemoved: event('removed'),
+    sendMessage: async id => ({ tabId: id }), onActivated: event('activated'), onUpdated: event('updated'), onRemoved: event('removed'),
   },
   windows: { update: async () => {}, onRemoved: event('windowRemoved') },
   action: { onClicked: event('clicked'), setBadgeText: async ({ tabId, text }) => badges.set(tabId, text), setBadgeBackgroundColor: async () => {}, setTitle: async () => {} },
@@ -52,13 +52,18 @@ test('two agents queue approval, retain separate routes, and release independent
   listeners.clicked(tabs.get(2));
   await settled(() => starts.length === 2 && badges.get(2) === 'ON');
   assert.deepEqual(starts, ['a', 'b']);
-  assert.deepEqual(await send('resolve', { sessionId: 'a' }), { tabId: 1 });
-  assert.deepEqual(await send('resolve', { sessionId: 'b' }), { tabId: 2 });
+  assert.deepEqual(await send('resolve', { sessionId: 'a' }), { tabId: 1, tabActive: false });
+  assert.deepEqual(await send('resolve', { sessionId: 'b' }), { tabId: 2, tabActive: true });
   await new Promise(resolve => listeners.message({ destination: 'background', type: 'event', event: { type: 'click', x: 10 } }, { tab: { id: 2 } }, resolve));
   assert.equal(forwarded.at(-1).sessionId, 'b');
   await assert.rejects(send('resolve', { sessionId: 'unknown' }), /not enabled/);
+  await listeners.activated();
+  assert.deepEqual(forwarded.filter(m => m.type === 'tabActivity'), [
+    { destination: 'offscreen', type: 'tabActivity', sessionId: 'a', active: false },
+    { destination: 'offscreen', type: 'tabActivity', sessionId: 'b', active: true },
+  ]);
   await send('released', { sessionId: 'a' });
   assert.equal(badges.get(1), ''); assert.equal(badges.get(2), 'ON');
-  assert.deepEqual(await send('resolve', { sessionId: 'b' }), { tabId: 2 });
+  assert.deepEqual(await send('resolve', { sessionId: 'b' }), { tabId: 2, tabActive: true });
   assert.equal((await send('approvalStatus', { sessionId: 'b' })).state, 'recording');
 });

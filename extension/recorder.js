@@ -1,10 +1,10 @@
-import { drawPointer } from './pointer.js';
+import { drawPointer, needsPointerOverlay } from './pointer.js';
 import { acquireMedia } from './capture-media.js';
 import { settings } from './config.js';
 import { visualChange } from './analysis.js';
 const base = `http://127.0.0.1:${settings.port}`;
 export function createRecorder(sessionId, background) {
-let media, tab, video, recording, completed, source = 'tab';
+let media, tab, video, recording, completed, source = 'tab', active = true;
 const warnings = [];
 function cropFrame(context, geometry) {
   const r = geometry.region;
@@ -46,6 +46,7 @@ async function command(name, args = {}) {
   }
   requireMedia();
   const geometry = await background('resolve', args);
+  active = geometry.tabActive;
   if (name === 'screenshot') {
     const canvas = canvasFor(geometry);
     const ctx = canvas.getContext('2d');
@@ -108,7 +109,7 @@ async function command(name, args = {}) {
       ctx.beginPath(); ctx.arc(x, y, 22 + (t - event.t) * 18, 0, Math.PI * 2); ctx.stroke();
       ctx.globalAlpha = 1;
     }
-    if (state.pointer && source === 'display') drawPointer(ctx, state.pointer, geometry);
+    if (state.pointer && needsPointerOverlay(source, active)) drawPointer(ctx, state.pointer, geometry);
     ctx.fillStyle = '#111827cc'; ctx.fillRect(0, canvas.height - 22, 125, 22);
     ctx.fillStyle = 'white'; ctx.font = '12px monospace'; ctx.fillText(`elapsed ${t.toFixed(1)}s`, 8, canvas.height - 7);
   }, 1000 / 15);
@@ -123,11 +124,12 @@ async function finish() {
   await state.done;
   if (recording !== state) return;
   state.stream.getTracks().forEach(track => track.stop());
-  completed = { blob: new Blob(state.chunks, { type: state.recorder.mimeType }), metadata: { geometry: state.geometry, duration: (Date.now() - state.started) / 1000, events: state.events, samples: state.samples, preserveTiming: state.args.preserveTiming, pointerRendering: source === 'display' ? 'reconstructed-from-page-events' : 'native', warnings: state.warnings } };
+  completed = { blob: new Blob(state.chunks, { type: state.recorder.mimeType }), metadata: { geometry: state.geometry, duration: (Date.now() - state.started) / 1000, events: state.events, samples: state.samples, preserveTiming: state.args.preserveTiming, pointerRendering: source === 'display' ? 'reconstructed-from-page-events' : 'native-with-background-fallback', warnings: state.warnings } };
   recording = null;
 }
 
 async function receive(message) {
+    if (message.type === 'tabActivity') { active = message.active; return; }
     if (message.type === 'event') {
       if (recording) {
         const event = { ...message.event, t: (message.event.at - recording.started) / 1000 };

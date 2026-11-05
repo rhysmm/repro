@@ -1,3 +1,7 @@
+export function needsPointerOverlay(source, active) {
+  return source === 'display' || active === false;
+}
+
 export function drawPointer(ctx, pointer, geometry) {
   const x = (pointer.x - geometry.region.x) * ctx.canvas.width / geometry.region.width;
   const y = (pointer.y - geometry.region.y) * ctx.canvas.height / geometry.region.height;

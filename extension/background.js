@@ -118,6 +118,18 @@ chrome.action.onClicked.addListener(tab => {
     throw error;
   });
 });
+chrome.tabs.onActivated.addListener(async () => {
+  const { captureRequests = [] } = await chrome.storage.session.get('captureRequests');
+  await Promise.all(captureRequests.filter(r => r.enabled).map(async request => {
+    let tab;
+    try { tab = await chrome.tabs.get(request.tabId); }
+    catch (error) {
+      if (/No tab with id|Invalid tab ID/.test(error.message)) return;
+      throw error;
+    }
+    await offscreen({ type: 'tabActivity', sessionId: request.sessionId, active: tab.active });
+  }));
+});
 chrome.tabs.onUpdated.addListener((tabId, change) => {
   if (change.status !== 'complete') return;
   const run = async () => {
@@ -148,7 +160,8 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       if (!request) throw new Error('This session is not enabled.');
       const result = await chrome.tabs.sendMessage(request.tabId, { type: 'resolve', options: message.options });
       if (result.error) throw new Error(result.error);
-      return result;
+      const tab = await chrome.tabs.get(request.tabId);
+      return { ...result, tabActive: tab.active };
     }
     if (message.type === 'requestCapture') return transact(async queue => {
       const options = message.options;
