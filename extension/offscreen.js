@@ -1,3 +1,4 @@
+import { acquireMedia } from './capture-media.js';
 import { settings } from './config.js';
 import { visualChange } from './analysis.js';
 const base = `http://127.0.0.1:${settings.port}`;
@@ -46,9 +47,20 @@ async function upload(kind, blob, metadata) {
   return result;
 }
 function status() { return { enabled: Boolean(media), tab, recording: Boolean(recording), completed: Boolean(completed), warnings }; }
-function requireMedia() { if (!media) throw new Error('Click the Chrome Evidence extension button on the tab to enable capture.'); }
+function requireMedia() { if (!media) throw new Error('Request capture with tabId and url first.'); }
 async function command(name, args = {}) {
-  if (name === 'status') return status();
+  if (name === 'status') return { ...status(), approval: await background('approvalStatus') };
+  if (name === 'wait') {
+    const deadline = Date.now() + args.seconds * 1000;
+    let approval = await background('approvalStatus');
+    if (approval?.requestId !== args.requestId) throw new Error('Unknown capture request.');
+    while (approval.state === 'awaiting_approval' && Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 250));
+      approval = await background('approvalStatus');
+      if (approval?.requestId !== args.requestId) throw new Error('Capture request was replaced.');
+    }
+    return { ...status(), approval };
+  }
   if (name === 'release') {
     if (recording || completed) throw new Error('Finish and retrieve the recording with stop first.');
     media?.getTracks().forEach(track => track.stop());
@@ -63,7 +75,12 @@ async function command(name, args = {}) {
     completed = null;
     return result;
   }
+  if (name === 'start' && !media) {
+    if (!args.tabId || !args.url) throw new Error('Provide tabId and url to request capture approval.');
+    return background('requestCapture', args);
+  }
   requireMedia();
+  if (args.tabId && args.tabId !== tab.id) throw new Error('Another tab is enabled. Release it before requesting a new tab.');
   const geometry = await background('resolve', args);
   if (name === 'screenshot') {
     const canvas = canvasFor(geometry);
@@ -154,8 +171,10 @@ chrome.runtime.onMessage.addListener((message, _sender, respond) => {
       return;
     }
     if (message.type === 'warning') { warnings.push(message.message); return; }
+    if (message.type === 'approvedStart') return command('start', message.options);
     if (message.type === 'enable') {
-      media = await navigator.mediaDevices.getUserMedia({ audio: false, video: { mandatory: { chromeMediaSource: 'tab', chromeMediaSourceId: message.streamId } } });
+      const candidate = await acquireMedia(navigator.mediaDevices, message);
+      media = candidate;
       tab = message.tab;
       video = document.createElement('video'); video.muted = true; video.srcObject = media;
       await video.play();

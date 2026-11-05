@@ -19,7 +19,7 @@ async function body(request, limit) {
   return Buffer.concat(chunks);
 }
 function command(name, args) {
-  if (!extension || extension.readyState !== 1) throw new Error('Capture extension is not connected. Load dist/extension and click its toolbar button on the target tab.');
+  if (!extension || extension.readyState !== 1) throw new Error('Capture extension is not connected. Load or reload dist/extension in Chrome; it connects automatically.');
   const id = randomUUID();
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => { pending.delete(id); reject(new Error('Capture command timed out; use status to inspect the session.')); }, 180000);
