@@ -19,8 +19,11 @@
     for (const { doc } of documents()) {
       if (observed.has(doc)) continue;
       observed.add(doc);
-      for (const type of ['pointerdown', 'click', 'keydown', 'scroll', 'input']) doc.addEventListener(type, event => {
+      let lastPointerMove = 0;
+      for (const type of ['pointermove', 'pointerdown', 'click', 'keydown', 'scroll', 'input']) doc.addEventListener(type, event => {
         if (type === 'click' && event.detail !== 0) return;
+        if (type === 'pointermove' && Date.now() - lastPointerMove < 33) return;
+        if (type === 'pointermove') lastPointerMove = Date.now();
         const offset = documents().find(entry => entry.doc === doc)?.offset || { x: 0, y: 0 };
         const rect = event.target?.getBoundingClientRect?.();
         send({ type, at: Date.now(), x: type === 'click' ? (rect?.x || 0) + (rect?.width || 0) / 2 + offset.x : (event.clientX || 0) + offset.x, y: type === 'click' ? (rect?.y || 0) + (rect?.height || 0) / 2 + offset.y : (event.clientY || 0) + offset.y });

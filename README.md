@@ -3,7 +3,7 @@
 A local Chrome extension and MCP server for recording bug evidence alongside an agent's existing Chrome browser controls. It does not drive the browser or attach another debugger.
 
 - Cropped video: test ID, role + name, CSS selector, viewport rectangle, or a union of targets.
-- Automatic red click rings, including browser-generated pointer events.
+- Thin, unfilled click rings and a persistent pointer reconstructed from page input events.
 - PNG screenshots with red boxes, arrows, and optional labels.
 - Automatic idle trimming with visible omission badges and an elapsed-time clock.
 - Original WebM plus reviewable H.264 MP4 and a JSON timing manifest.
@@ -87,7 +87,7 @@ The capture service (`npm start`) must also be running. The MCP process only pro
 
 ## Timing and evidence fidelity
 
-The recorder samples a downscaled clean crop five times per second. Changes above a small area/color threshold and actual page input events identify activity. It retains 0.6 seconds before and 0.7 seconds after interactions, and collapses idle gaps of at least 0.8 seconds between retained activity windows. Visual changes retain their own context. The initial 0.8 seconds and final 0.6 seconds remain. Small blinking carets generally do not retain an entire gap. The recording itself is 15fps; click rings and the elapsed-time clock are composed into the output, not injected into the page.
+The recorder samples a downscaled clean crop five times per second. Changes above a small area/color threshold and actual page input events identify activity. It retains 0.6 seconds before and 0.7 seconds after interactions, and collapses idle gaps of at least 0.8 seconds between retained activity windows. Visual changes retain their own context. The initial 0.8 seconds and final 0.6 seconds remain. Small blinking carets generally do not retain an entire gap. The recording itself is 15fps; click rings, pointer, and the elapsed-time clock are composed into the output, not injected into the page. Click rings fade over 0.45 seconds. The pointer is reconstructed from observed page input positions and remains at the last observed position between events; it is an evidence overlay, not a guaranteed reproduction of the OS cursor shape. Pointer movement alone does not add activity events to the trimming timeline. Chrome may still supply its native cursor in the source stream.
 
 Every cut shows the omitted duration. `manifest.json` records the original-to-edited timeline, input timestamps, crop, and source URL. `original.webm` preserves the entire cropped recording. `preserveTiming: true` disables trimming for performance bugs or subtle visual changes. The heuristic cannot distinguish agent thinking from an application freeze; use the original and timestamps when timing is evidence. It does not remove all animations, spinners, or large repetitive changes.
 

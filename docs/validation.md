@@ -45,3 +45,8 @@ Three clips were recorded on app.dhdev.co for Sunny Today using ordinary Chrome 
 All three files decode as H.264 MP4. Sampled frames were inspected for page content, click rings, and omission labels. An annotated screenshot highlighted the selected channel panel. The filter drawer reflows the page leftward; the fixed crop includes the filter controls but excludes part of the leftmost card. Search and filters were cleared afterward, and the media session was released. No creator data was modified.
 
 Lint and all 15 automated tests pass. Wrong-tab selection is covered by unit tests, not a live intentionally incorrect share. Concurrent independent recording and background rendering remain unvalidated/unsupported as described in the README.
+
+
+## Pointer visibility (0.2.3)
+
+The live 0.2.2 test confirmed that Chrome reported cursor=motion despite a cursor=always request; removing the ring fill alone did not fix missing cursors. Version 0.2.3 draws a persistent pointer above a thin, unfilled ring using observed page pointer positions. In a 320x262 Channels-panel recording, frame inspection at 8fps showed the pointer present during both clicks and after both rings faded. The source was 23.171 seconds and the trimmed timeline 4.237 seconds, with two clicks. Pointer-only events are excluded from the activity event list. The recording manifest identifies the reconstructed pointer. Native OS cursor shape fidelity and all possible native/overlay interactions are not guaranteed.

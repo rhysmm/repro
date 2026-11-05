@@ -1,3 +1,4 @@
+import { drawPointer } from './pointer.js';
 import { acquireMedia } from './capture-media.js';
 import { settings } from './config.js';
 import { visualChange } from './analysis.js';
@@ -46,7 +47,7 @@ async function upload(kind, blob, metadata) {
   if (!response.ok) throw new Error(result.error || 'Could not save capture.');
   return result;
 }
-function status() { return { enabled: Boolean(media), tab, recording: Boolean(recording), completed: Boolean(completed), warnings }; }
+function status() { return { enabled: Boolean(media), tab, recording: Boolean(recording), completed: Boolean(completed), cursor: media?.getVideoTracks()[0]?.getSettings().cursor, warnings }; }
 function requireMedia() { if (!media) throw new Error('Request capture with tabId and url first.'); }
 async function command(name, args = {}) {
   if (name === 'status') return { ...status(), approval: await background('approvalStatus') };
@@ -136,12 +137,15 @@ async function command(name, args = {}) {
       state.previous = current; state.nextSample = t + 0.2;
     }
     for (const event of state.events) {
-      if (!['pointerdown', 'click'].includes(event.type) || t - event.t < 0 || t - event.t > 0.75) continue;
+      if (!['pointerdown', 'click'].includes(event.type) || t - event.t < 0 || t - event.t > 0.45) continue;
       const x = (event.x - geometry.region.x) * canvas.width / geometry.region.width;
       const y = (event.y - geometry.region.y) * canvas.height / geometry.region.height;
-      ctx.strokeStyle = '#ef233c'; ctx.fillStyle = '#ef233c44'; ctx.lineWidth = 4;
-      ctx.beginPath(); ctx.arc(x, y, 15 + (t - event.t) * 10, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = '#ef233c'; ctx.lineWidth = 2;
+      ctx.globalAlpha = 1 - (t - event.t) / 0.45;
+      ctx.beginPath(); ctx.arc(x, y, 22 + (t - event.t) * 18, 0, Math.PI * 2); ctx.stroke();
+      ctx.globalAlpha = 1;
     }
+    if (state.pointer) drawPointer(ctx, state.pointer, geometry);
     ctx.fillStyle = '#111827cc'; ctx.fillRect(0, canvas.height - 22, 125, 22);
     ctx.fillStyle = 'white'; ctx.font = '12px monospace'; ctx.fillText(`elapsed ${t.toFixed(1)}s`, 8, canvas.height - 7);
   }, 1000 / 15);
@@ -155,7 +159,7 @@ async function finish() {
   state.recorder.stop();
   await state.done;
   state.stream.getTracks().forEach(track => track.stop());
-  completed = { blob: new Blob(state.chunks, { type: state.recorder.mimeType }), metadata: { geometry: state.geometry, duration: (Date.now() - state.started) / 1000, events: state.events, samples: state.samples, preserveTiming: state.args.preserveTiming, warnings: state.warnings } };
+  completed = { blob: new Blob(state.chunks, { type: state.recorder.mimeType }), metadata: { geometry: state.geometry, duration: (Date.now() - state.started) / 1000, events: state.events, samples: state.samples, preserveTiming: state.args.preserveTiming, pointerRendering: 'reconstructed-from-page-events', warnings: state.warnings } };
   recording = null;
 }
 chrome.runtime.onMessage.addListener((message, _sender, respond) => {
@@ -165,6 +169,8 @@ chrome.runtime.onMessage.addListener((message, _sender, respond) => {
     if (message.type === 'event') {
       if (recording) {
         const event = { ...message.event, t: (message.event.at - recording.started) / 1000 };
+        if (['pointermove', 'pointerdown', 'click'].includes(event.type)) recording.pointer = event;
+        if (event.type === 'pointermove') return;
         const last = recording.events.at(-1);
         if (event.type !== 'scroll' || !last || event.t - last.t > 0.15) recording.events.push(event);
       }
