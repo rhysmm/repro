@@ -16,12 +16,13 @@ export function updateApprovalBanner(request, visible) {
   style.replaceSync(`
     :host{all:initial} *{box-sizing:border-box}
     .notice{position:relative;background:#fff;color:#172033;border:2px solid #2563eb;border-radius:16px;padding:22px 22px 18px;box-shadow:0 12px 40px #17203340;font:15px/1.5 system-ui,-apple-system,sans-serif;pointer-events:auto;text-align:left}
-    .eyebrow{display:flex;align-items:center;gap:8px;color:#1d4ed8;font-size:12px;font-weight:750;letter-spacing:.06em;text-transform:uppercase;padding-right:64px}
+    .eyebrow{display:flex;align-items:center;gap:8px;color:#1d4ed8;font-size:12px;font-weight:750;letter-spacing:.06em;text-transform:uppercase}
     .dot{height:8px;width:8px;border-radius:50%;background:#2563eb;flex:none}
-    h2{font-size:21px;line-height:1.25;letter-spacing:-.025em;margin:14px 0 10px;font-weight:750;padding-right:22px}
+    h2{font-size:21px;line-height:1.25;letter-spacing:-.025em;margin:14px 0 10px;font-weight:750}
     p{margin:0 0 12px;color:#475569} strong{color:#172033;font-weight:700}
     .rec{display:inline-block;border-radius:4px;background:#b45309;color:white;padding:0 5px;font:700 12px/1.6 system-ui;vertical-align:1px}
-    .arrow{position:absolute;right:14px;top:-10px;width:64px;height:75px;color:#2563eb;filter:drop-shadow(0 2px 1px #fff)}
+    .notice>:not(.arrow){position:relative;z-index:1}
+    .arrow{position:absolute;right:64px;top:8px;width:190px;height:250px;color:#2563eb;opacity:.12;pointer-events:none;z-index:0}
     .foot{display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:1px solid #e2e8f0;padding-top:12px;margin-top:16px}
     .waiting{font-size:12px;color:#64748b} button{font:600 13px system-ui;color:#334155;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:7px;padding:7px 11px;cursor:pointer;white-space:nowrap}
     button:hover{background:#e2e8f0} button:focus-visible{outline:3px solid #2563eb;outline-offset:3px}
@@ -40,10 +41,10 @@ export function updateApprovalBanner(request, visible) {
     return node;
   };
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('class', 'arrow'); svg.setAttribute('viewBox', '0 0 64 75');
-  svg.setAttribute('fill', 'none'); svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('class', 'arrow'); svg.setAttribute('viewBox', '0 0 190 250');
+  svg.setAttribute('fill', 'currentColor'); svg.setAttribute('aria-hidden', 'true');
   const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-  for (const [name, value] of Object.entries({ d: 'M9 68C43 65 46 38 46 10M32 24L46 9L59 24', stroke: 'currentColor', 'stroke-width': '5', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' })) arrow.setAttribute(name, value);
+  arrow.setAttribute('d', 'M95 8L175 88H125V238H65V88H15Z');
   svg.append(arrow);
   const eyebrow = element('div', 'eyebrow');
   eyebrow.append(element('span', 'dot'), 'Chrome Evidence');
