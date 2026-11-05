@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 const listeners = {};
 const event = name => ({ addListener: fn => { listeners[name] = fn; } });
 const stored = {};
-const focused = [], forwarded = [], starts = [], badges = new Map();
+const focused = [], forwarded = [], starts = [], effects = [], badges = new Map();
 const tabs = new Map([[1, { id: 1, windowId: 1, active: false, url: 'https://example.com/a' }], [2, { id: 2, windowId: 1, active: true, url: 'https://example.com/b' }]]);
 globalThis.chrome = {
   runtime: {
@@ -25,8 +25,11 @@ globalThis.chrome = {
   },
   windows: { update: async () => {}, onRemoved: event('windowRemoved') },
   action: { onClicked: event('clicked'), setBadgeText: async ({ tabId, text }) => badges.set(tabId, text), setBadgeBackgroundColor: async () => {}, setTitle: async () => {} },
-  scripting: { executeScript: async () => {} },
-  tabCapture: { getMediaStreamId: async ({ targetTabId }) => `stream-${targetTabId}` },
+  scripting: { executeScript: async options => {
+    effects.push({ type: options.func?.name || 'inject', tabId: options.target.tabId, visible: options.args?.[1] });
+    return [{ result: { shown: options.args?.[1] === true } }];
+  } },
+  tabCapture: { getMediaStreamId: async ({ targetTabId }) => { effects.push({ type: 'stream', tabId: targetTabId }); return `stream-${targetTabId}`; } },
 };
 await import('../extension/background.js');
 function send(type, options, sender = {}) {
@@ -45,6 +48,8 @@ test('two agents queue approval, retain separate routes, and release independent
   ]);
   assert.equal(a.state, 'awaiting_approval'); assert.equal(b.state, 'queued');
   assert.deepEqual(focused, [1]);
+  assert.equal(a.banner.shown, true);
+  assert.deepEqual(effects.filter(e => e.visible === true).map(e => e.tabId), [1]);
   listeners.clicked(tabs.get(1));
   await settled(() => starts.length === 1 && focused.length === 2);
   assert.deepEqual(focused, [1, 2]);
@@ -52,6 +57,14 @@ test('two agents queue approval, retain separate routes, and release independent
   listeners.clicked(tabs.get(2));
   await settled(() => starts.length === 2 && badges.get(2) === 'ON');
   assert.deepEqual(starts, ['a', 'b']);
+  assert.deepEqual(effects.filter(e => ['updateApprovalBanner', 'stream'].includes(e.type)), [
+    { type: 'updateApprovalBanner', tabId: 1, visible: true },
+    { type: 'updateApprovalBanner', tabId: 1, visible: false },
+    { type: 'stream', tabId: 1 },
+    { type: 'updateApprovalBanner', tabId: 2, visible: true },
+    { type: 'updateApprovalBanner', tabId: 2, visible: false },
+    { type: 'stream', tabId: 2 },
+  ]);
   assert.deepEqual(await send('resolve', { sessionId: 'a' }), { tabId: 1, tabActive: false });
   assert.deepEqual(await send('resolve', { sessionId: 'b' }), { tabId: 2, tabActive: true });
   await new Promise(resolve => listeners.message({ destination: 'background', type: 'event', event: { type: 'click', x: 10 } }, { tab: { id: 2 } }, resolve));
@@ -66,4 +79,40 @@ test('two agents queue approval, retain separate routes, and release independent
   assert.equal(badges.get(1), ''); assert.equal(badges.get(2), 'ON');
   assert.deepEqual(await send('resolve', { sessionId: 'b' }), { tabId: 2, tabActive: true });
   assert.equal((await send('approvalStatus', { sessionId: 'b' })).state, 'recording');
+});
+
+function decline(requestId, tabId) {
+  return new Promise((resolve, reject) => listeners.message({ destination: 'background', type: 'bannerDecline', requestId }, { tab: { id: tabId } }, response => {
+    if (response.error) reject(new Error(response.error)); else resolve(response.result);
+  }));
+}
+test('banner cancellation is bound to its tab and request, then advances the queue', async () => {
+  await send('released', { sessionId: 'b' });
+  const a = await send('requestCapture', { sessionId: 'cancel-a', tabId: 1, url: tabs.get(1).url, approval: 'toolbar' });
+  await send('requestCapture', { sessionId: 'cancel-b', tabId: 2, url: tabs.get(2).url, approval: 'toolbar' });
+  await assert.rejects(decline(a.requestId, 2), /no longer active/);
+  await assert.rejects(decline('stale-request', 1), /no longer active/);
+  assert.equal((await decline(a.requestId, 1)).state, 'declined');
+  assert.equal((await send('approvalStatus', { sessionId: 'cancel-b' })).state, 'awaiting_approval');
+  assert.deepEqual(effects.slice(-2), [
+    { type: 'updateApprovalBanner', tabId: 1, visible: false },
+    { type: 'updateApprovalBanner', tabId: 2, visible: true },
+  ]);
+  await send('released', { sessionId: 'cancel-a' });
+  await send('released', { sessionId: 'cancel-b' });
+});
+test('expiry and navigation remove pending banners and reload restores a current request', async () => {
+  await send('requestCapture', { sessionId: 'expire', tabId: 1, url: tabs.get(1).url, approval: 'toolbar' });
+  stored.captureRequests.find(r => r.sessionId === 'expire').expiresAt = Date.now() - 1;
+  await listeners.alarm({ name: 'approval-expiry' });
+  assert.equal((await send('approvalStatus', { sessionId: 'expire' })).state, 'expired');
+  assert.deepEqual(effects.at(-1), { type: 'updateApprovalBanner', tabId: 1, visible: false });
+  await send('released', { sessionId: 'expire' });
+  await send('requestCapture', { sessionId: 'navigate', tabId: 1, url: tabs.get(1).url, approval: 'toolbar' });
+  await listeners.updated(1, { status: 'complete' });
+  assert.deepEqual(effects.at(-1), { type: 'updateApprovalBanner', tabId: 1, visible: true });
+  await listeners.updated(1, { url: 'https://example.com/changed' });
+  assert.equal((await send('approvalStatus', { sessionId: 'navigate' })).state, 'failed');
+  assert.deepEqual(effects.at(-1), { type: 'updateApprovalBanner', tabId: 1, visible: false });
+  await send('released', { sessionId: 'navigate' });
 });

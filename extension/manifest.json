@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Chrome Evidence",
-  "version": "0.5.0",
+  "version": "0.6.1",
   "description": "Local cropped evidence capture alongside your existing browser agent.",
   "minimum_chrome_version": "116",
   "permissions": [
@@ -13,7 +13,8 @@
     "alarms"
   ],
   "host_permissions": [
-    "http://127.0.0.1/*"
+    "http://*/*",
+    "https://*/*"
   ],
   "background": {
     "service_worker": "background.js",
@@ -24,9 +25,5 @@
   },
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'; connect-src http://127.0.0.1:47321 ws://127.0.0.1:47321"
-  },
-  "optional_host_permissions": [
-    "http://*/*",
-    "https://*/*"
-  ]
+  }
 }

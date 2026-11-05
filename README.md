@@ -35,15 +35,16 @@ The checkout is the installed application; keep it in place. Paths to Node and F
 2. Turn on **Developer mode** in the top-right corner.
 3. Click **Load unpacked**.
 4. Select this repository’s **`dist/extension`** folder, not the source `extension` folder. The installer prints its full path.
-5. Open Chrome’s Extensions menu (puzzle icon) and pin **Chrome Evidence**.
+5. Allow site access on HTTP/HTTPS websites when Chrome asks. This lets the extension show an approval banner before you click REC.
+6. Open Chrome’s Extensions menu (puzzle icon) and pin **Chrome Evidence**.
 
-For an existing unpacked installation, click **Reload** instead. The extension connects to the service automatically. Refresh/restart the MCP connection in Codex after installation; an existing chat may need a new connection or chat to receive the updated tool catalog. You do not need to keep a terminal open or start an MCP process manually.
+For an existing unpacked installation, click **Reload** instead. When upgrading from a version before 0.6.0, Chrome may disable the extension until you accept its new website-access permission; re-enable it and accept that prompt. The extension connects to the service automatically. Refresh/restart the MCP connection in Codex after installation; an existing chat may need a new connection or chat to receive the updated tool catalog. You do not need to keep a terminal open or start an MCP process manually.
 
 ### Normal operation
 
 There are two persistent components: the Chrome extension and one local service containing both the MCP endpoint and capture bridge. Codex connects to `http://127.0.0.1:47321/mcp`. Multiple clients share this service; their recording sessions remain independent. Temporary FFmpeg processes encode requested videos. A running service or enabled tab does not continually save video to disk.
 
-The agent supplies a Chrome tab ID and its exact current URL to `capture_start`. The extension brings that tab forward and shows **REC?**. Click the toolbar icon once to approve. No tab picker or popup is needed. Requests are queued; only the presented request focuses its tab, and its two-minute approval deadline starts then. Existing recordings continue while another request awaits approval.
+The agent supplies a Chrome tab ID and its exact current URL to `capture_start`. The extension brings that tab forward, shows **REC?** on its icon, and places an upper-right page banner explaining that an agent wants to capture clips/screenshots. An upward arrow points toward the Chrome toolbar; its exact alignment depends on where the icon is pinned. Click the toolbar icon once to approve. The banner is removed before capture starts, so it does not appear in evidence. **Not now** declines the request and advances the approval queue. Banners also disappear on cancellation, expiry, or navigation to a different URL. No tab picker or popup is needed. Requests are queued; only the presented request focuses its tab, and its two-minute approval deadline starts then. Existing recordings continue while another request awaits approval.
 
 The stream remains active between clips until explicitly released, the tab closes, or Chrome stops sharing. No microphone or tab audio is captured. Completed clips remain in memory until retrieved. Reloading the extension or restarting Chrome ends its capture sessions and requires new approvals. A local-service restart reconnects to the extension; in-flight commands fail explicitly and must be checked before retrying, since an action may already have executed. It does not intentionally end browser capture sessions.
 
@@ -71,7 +72,7 @@ If the port is already occupied, the installer stops with an explanation. For an
 
 If Chrome is closed or the extension is unavailable, MCP still connects. Its initialization instructions and `capture_status` provide the exact extension path and the manual installation steps. A disconnected extension might be uninstalled, disabled, or simply in a closed browser; the agent should explain that distinction. If the service itself is unavailable, MCP cannot provide setup help: run `npm run service:status` or rerun installation.
 
-`.runtime/`, `dist/`, and `artifacts/` are ignored by Git. Generated configuration contains a local pairing token: do not share generated files or configuration backups. The HTTP service binds only to `127.0.0.1`, checks the host and token, and rejects browser-origin MCP requests. Each machine needs its own installation.
+`.runtime/`, `dist/`, and `artifacts/` are ignored by Git. Generated configuration contains a local pairing token: do not share generated files or configuration backups. The HTTP service binds only to `127.0.0.1`, checks the host and token, and rejects browser-origin MCP requests. Each machine needs its own installation. Website access enables the pre-approval banner; it does not authorize recording. Capturing a new tab still requires the user’s toolbar click. No page input instrumentation is installed until approval. If site access is withheld or the page is restricted, the agent receives a banner-unavailable explanation and toolbar approval remains available where Chrome permits capture.
 
 ### Manual development or other platforms
 
@@ -201,3 +202,9 @@ The initial multi-tab clips exposed a missing cursor on the inactive tab. Toolba
 Validated fresh registration and repeated installation on macOS, automatic launchd recovery after a forced process crash, and Chrome reconnection. A real HTTP MCP client recorded a 968 × 418 clip across a service restart, retrieved both clicks and the delayed UI update, and saved an annotated screenshot. The 54.1-second recording trimmed to about 4.4 seconds. The approved capture remained enabled afterward.
 
 Automated coverage includes real HTTP MCP initialization/tool discovery without an extension, actionable setup responses, token/origin checks, concurrent clients, configuration preservation/idempotence, and the existing capture tests. macOS login startup is configured by RunAtLoad; this session did not log out to test a fresh login.
+
+### Approval banner and reload recovery (0.6.1)
+
+Validated the upper-right banner and toolbar arrow in Chrome on 2026-11-05. “Not now” declined the request without enabling capture. A new request on the same session displayed the banner again; one toolbar click removed it and started recording. The full-viewport export contained no banner in inspected frames, captured both interactions and the delayed save result, and trimmed 19.4 seconds to 5.4 seconds. The session remained enabled with recording stopped.
+
+All 39 tests and lint pass, including synchronous/asynchronous extension-context invalidation and offscreen startup with only the runtime APIs available to that document. Offscreen version reporting uses generated configuration. Page listeners from this version detach after extension invalidation; pages still carrying older injected listeners need one page refresh after upgrading.

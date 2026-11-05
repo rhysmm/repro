@@ -11,7 +11,7 @@ approve.disabled = false;
 approve.addEventListener('click', async () => {
   approve.disabled = true;
   try {
-    const granted = await chrome.permissions.request({ origins: [request.origin] });
+    const granted = await chrome.permissions.contains({ origins: [request.origin] }) || await chrome.permissions.request({ origins: [request.origin] });
     if (!granted) { await message('decline', { reason: 'site_access_denied' }); status.textContent = 'Site access was declined. Nothing is recording.'; return; }
     status.textContent = 'Select the requested tab in Chrome’s sharing picker.';
     const result = await message('approve');

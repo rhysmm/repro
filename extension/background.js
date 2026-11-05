@@ -1,5 +1,6 @@
 import { approvedTarget, verifyToolbarApproval } from './approval-state.js';
 import { ApprovalQueue } from './approval-queue.js';
+import { setApprovalBanner } from './approval-banner.js';
 let creatingOffscreen;
 let mutations = Promise.resolve();
 async function offscreen(message) {
@@ -41,7 +42,10 @@ function transact(action) {
 }
 async function advance(queue) {
   const expired = queue.expire();
-  if (expired) await badge(expired.tabId, '', 'Capture approval expired');
+  if (expired) {
+    await setApprovalBanner(chrome.scripting, expired, false);
+    await badge(expired.tabId, '', 'Capture approval expired');
+  }
   let request;
   while ((request = queue.present())) {
     try {
@@ -50,6 +54,7 @@ async function advance(queue) {
       await chrome.tabs.update(target.id, { active: true });
       await chrome.windows.update(target.windowId, { focused: true });
       await badge(target.id, 'REC?', `Approve recording: ${request.url}`);
+      if (request.approval === 'toolbar') request.banner = await setApprovalBanner(chrome.scripting, request, true);
       if (request.approval === 'picker') {
         const window = await chrome.windows.create({ url: chrome.runtime.getURL(`approval.html?requestId=${request.requestId}`), type: 'popup', width: 560, height: 540 });
         request.windowId = window.id;
@@ -74,6 +79,7 @@ chrome.alarms.onAlarm.addListener(alarm => {
 async function approve(request, target) {
   try {
     approvedTarget(request.url, target.url);
+    await setApprovalBanner(chrome.scripting, request, false);
     await inject(target.id);
     let capture;
     if (request.approval === 'picker') {
@@ -130,10 +136,27 @@ chrome.tabs.onActivated.addListener(async () => {
     await offscreen({ type: 'tabActivity', sessionId: request.sessionId, active: tab.active });
   }));
 });
-chrome.tabs.onUpdated.addListener((tabId, change) => {
+chrome.tabs.onUpdated.addListener(async (tabId, change) => {
+  if (change.url) {
+    await transact(async queue => {
+      const current = queue.current();
+      if (current?.tabId === tabId && current.state === 'awaiting_approval' && current.url !== change.url) {
+        Object.assign(current, { state: 'failed', error: 'The requested tab navigated. Make a new capture request using its current URL.' });
+        await setApprovalBanner(chrome.scripting, current, false);
+        await badge(tabId, '', 'Capture request cancelled after navigation');
+        await advance(queue);
+      }
+    });
+  }
   if (change.status !== 'complete') return;
   const run = async () => {
     const { captureRequests = [] } = await chrome.storage.session.get('captureRequests');
+    const pending = captureRequests.find(r => r.tabId === tabId && r.state === 'awaiting_approval' && r.approval === 'toolbar');
+    if (pending) await transact(async queue => {
+      await advance(queue);
+      const current = queue.current();
+      if (current?.requestId === pending.requestId && current.state === 'awaiting_approval') current.banner = await setApprovalBanner(chrome.scripting, current, true);
+    });
     const request = captureRequests.find(r => r.tabId === tabId && r.enabled);
     if (!request) return;
     try { await inject(tabId); }
@@ -148,6 +171,15 @@ chrome.tabs.onRemoved.addListener(tabId => transact(async queue => {
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (message.destination !== 'background') return;
   const run = async () => {
+    if (message.type === 'bannerDecline') return transact(async queue => {
+      const current = queue.current();
+      if (!current || current.state !== 'awaiting_approval' || current.approval !== 'toolbar' || current.requestId !== message.requestId || current.tabId !== sender.tab?.id) throw new Error('This approval request is no longer active on this tab.');
+      Object.assign(current, { state: 'declined', error: 'User selected Not now in the approval banner.' });
+      await setApprovalBanner(chrome.scripting, current, false);
+      await badge(current.tabId, '', 'Capture declined');
+      await advance(queue);
+      return { state: 'declined' };
+    });
     if (message.type === 'event') {
       const { captureRequests = [] } = await chrome.storage.session.get('captureRequests');
       const request = captureRequests.find(r => r.tabId === sender.tab?.id && r.enabled);
@@ -176,6 +208,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     });
     if (message.type === 'released') return transact(async queue => {
       const request = queue.release(message.options.sessionId);
+      await setApprovalBanner(chrome.scripting, request, false);
       await badge(request.tabId, '', 'Chrome Evidence');
       await advance(queue);
       return { released: true };

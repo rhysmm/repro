@@ -1,10 +1,17 @@
 (() => {
-  if (globalThis.__chromeEvidenceInstalled) return;
-  globalThis.__chromeEvidenceInstalled = true;
+  if (globalThis.__chromeEvidenceInstalled?.active) return;
+  const listeners = new AbortController();
+  const state = { active: true, dispose: () => { state.active = false; listeners.abort(); observer.disconnect(); } };
+  globalThis.__chromeEvidenceInstalled = state;
   const observed = new WeakSet();
-  const send = event => chrome.runtime.sendMessage({ destination: 'background', type: 'event', event }).catch(error => {
-    if (!/Extension context invalidated|Receiving end does not exist/.test(error.message)) throw error;
-  });
+  const send = async event => {
+    if (!state.active) return;
+    try { await chrome.runtime.sendMessage({ destination: 'background', type: 'event', event }); }
+    catch (error) {
+      if (/Extension context invalidated/.test(error.message)) { state.dispose(); return; }
+      if (!/Receiving end does not exist/.test(error.message)) throw error;
+    }
+  };
   function documents(doc = document, offset = { x: 0, y: 0 }) {
     const result = [{ doc, offset }];
     for (const frame of doc.querySelectorAll('iframe')) {
@@ -27,12 +34,13 @@
         const offset = documents().find(entry => entry.doc === doc)?.offset || { x: 0, y: 0 };
         const rect = event.target?.getBoundingClientRect?.();
         send({ type, at: Date.now(), x: type === 'click' ? (rect?.x || 0) + (rect?.width || 0) / 2 + offset.x : (event.clientX || 0) + offset.x, y: type === 'click' ? (rect?.y || 0) + (rect?.height || 0) / 2 + offset.y : (event.clientY || 0) + offset.y });
-      }, { capture: true, passive: true });
+      }, { capture: true, passive: true, signal: listeners.signal });
     }
   }
   observe();
-  new MutationObserver(observe).observe(document, { subtree: true, childList: true });
-  addEventListener('load', observe, true);
+  const observer = new MutationObserver(observe);
+  observer.observe(document, { subtree: true, childList: true });
+  addEventListener('load', observe, { capture: true, signal: listeners.signal });
   function roots(doc) {
     const result = [doc];
     for (const element of doc.querySelectorAll('*')) if (element.shadowRoot) result.push(...roots(element.shadowRoot));
@@ -65,7 +73,7 @@
     return match;
   }
   chrome.runtime.onMessage.addListener((message, _sender, respond) => {
-    if (message.type !== 'resolve') return;
+    if (!state.active || message.type !== 'resolve') return;
     try {
       const options = message.options;
       const targets = options.region ? (Array.isArray(options.region) ? options.region : [options.region]).map(resolve) : [{ x: 0, y: 0, width: innerWidth, height: innerHeight }];

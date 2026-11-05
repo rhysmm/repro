@@ -40,6 +40,6 @@ export class ApprovalQueue {
   }
   status(sessionId) {
     const r = this.get(sessionId);
-    return { state: r.state, requestId: r.requestId, tabId: r.tabId, error: r.error, queuePosition: r.state === 'queued' ? this.requests.filter(r => pending.includes(r.state)).indexOf(r) + 1 : undefined };
+    return { state: r.state, requestId: r.requestId, tabId: r.tabId, banner: r.banner, error: r.error, queuePosition: r.state === 'queued' ? this.requests.filter(r => pending.includes(r.state)).indexOf(r) + 1 : undefined };
   }
 }
