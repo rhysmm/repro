@@ -79,7 +79,7 @@ const server = http.createServer(async (request, response) => {
     }
     if (url.pathname === '/upload' && request.method === 'POST') {
       const kind = url.searchParams.get('kind');
-      if (!['video', 'screenshot'].includes(kind)) throw new Error('Invalid artifact type.');
+      if (!['video', 'screenshot', 'callout'].includes(kind)) throw new Error('Invalid artifact type.');
       const payload = await body(request, 150 * 1024 * 1024);
       if (payload.length < 4) throw new Error('Invalid capture payload.');
       const metadataLength = payload.readUInt32BE(0);
@@ -87,14 +87,15 @@ const server = http.createServer(async (request, response) => {
       const metadata = JSON.parse(payload.subarray(4, 4 + metadataLength).toString());
       const directory = path.join(artifactDirectory, randomUUID()); await mkdir(directory);
       const bytes = payload.subarray(4 + metadataLength);
-      if (kind === 'screenshot') {
+      if (kind === 'screenshot' || kind === 'callout') {
         const file = path.join(directory, 'screenshot.png'); await writeFile(file, bytes);
         await writeFile(path.join(directory, 'manifest.json'), JSON.stringify(metadata, null, 2));
+        if (kind === 'callout') return reply(response, 200, { calloutId: path.basename(directory) });
         return reply(response, 200, { screenshot: file, region: metadata.geometry.region, warnings: metadata.warnings });
       }
       await writeFile(path.join(directory, 'original.webm'), bytes);
       await writeFile(path.join(directory, 'capture.json'), JSON.stringify(metadata, null, 2));
-      return reply(response, 200, await processVideo(directory, metadata));
+      return reply(response, 200, await processVideo(directory, metadata, { calloutRoot: artifactDirectory }));
     }
     reply(response, 404, { error: 'Not found.' });
   } catch (error) {

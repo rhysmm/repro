@@ -149,6 +149,25 @@ The optional `src/mcp.js` stdio adapter remains for compatibility and developmen
 
 Official documentation: [Codex MCP configuration and server instructions](https://learn.chatgpt.com/docs/extend/mcp?surface=cli), [macOS LaunchAgents](https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/CreatingLaunchdJobs.html).
 
+## Readable callouts during a recording
+
+At an important result, call `capture_callout`:
+
+```json
+{
+  "sessionId": "the-active-session-id",
+  "target": { "text": "Saved successfully" },
+  "label": "The saved state is visible here",
+  "holdSeconds": 3
+}
+```
+
+The tool saves the current annotated frame and returns immediately, without waiting for `holdSeconds`. Continue interacting normally. When `capture_stop` exports the MP4, it inserts that frame at the captured moment for three seconds by default (1–10 supported), then plays the following source footage. Idle trimming retains context around the callout; it never removes the inserted reading time. No new approval is needed.
+
+The website and live recording never pause. `original.webm` stays uninterrupted and contains no callout inserts. The manifest separates source time, omitted idle time, inserted reading time, and the final playback timeline. Each saved callout PNG is included alongside the exported clip. Use element targets inside the current crop; a changed viewport or crop too small for a readable label produces an actionable error. Up to 20 callouts can be added per clip. The clip’s `maxSeconds` limits source recording time; inserted holds can make the exported video longer.
+
+These are editorial freeze-frames, not application delays. `preserveTiming` preserves the complete original footage, with any requested callouts still added to the exported MP4.
+
 ## Timing and evidence fidelity
 
 The recorder samples a downscaled clean crop five times per second. Changes above a small area/color threshold and actual page input events identify activity. It retains 0.6 seconds before and 0.7 seconds after interactions, and collapses idle gaps of at least 0.8 seconds between retained activity windows. Visual changes retain their own context. The initial 0.8 seconds and final 0.6 seconds remain. Small blinking carets generally do not retain an entire gap. The recording itself is 15fps; click rings and the pointer are composed into the output, not injected into the page. Click rings fade over 0.45 seconds. With the sharing-picker flow, the pointer is reconstructed from observed page input positions and remains at the last observed position between events; it is an evidence overlay, not a guaranteed reproduction of the OS cursor shape. Pointer movement alone does not add activity events to the trimming timeline. The direct toolbar flow uses Chrome’s native cursor on the active tab and reconstructs a pointer from page events for inactive tabs. The fallback follows tab activation changes; it holds the last observed position and does not reproduce every native cursor shape. Chrome may still supply its native cursor in the sharing-picker source stream.
@@ -217,3 +236,7 @@ Screenshot rectangles use viewport CSS pixels. Prefer `testId`, `role`/`name`, e
 ### Annotation validation (0.7.0)
 
 Live Chrome validation confirmed a 3456 × 2234 source stream contained a 1672 × 981 viewport with vertical padding. Removing that padding before cropping aligned three element-based button boxes in a 968 × 418 screenshot. Long adjacent labels wrapped and moved apart without covering the highlighted buttons. A tightly cropped 316 × 44 button row used a separate numbered legend, and exact visible-text targeting resolved successfully. All 46 tests and lint pass. The earlier removal of elapsed-time and omitted-time video overlays is included; timing details remain in the manifest.
+
+### Exported reading pauses (0.8.1)
+
+Validated in Chrome on 2026-11-05: publish, capture a labelled result frame, then reset. Saving the callout returned in 1.06 seconds, without waiting for its three-second hold. The exported 8.87-second MP4 contains the annotation from 3.00–6.00 seconds and preserves the following reset click. The source recording was 28.56 seconds; idle gaps were trimmed independently of the inserted hold. Exported frames and the playback manifest were inspected. All 54 tests and lint pass, including real encoding checks that retain following source frames and leave the original WebM byte-for-byte unchanged.

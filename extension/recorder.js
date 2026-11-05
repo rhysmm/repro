@@ -1,3 +1,4 @@
+import { prepareCallout } from './callout.js';
 import { sourceCrop, frameContentRect } from './frame-geometry.js';
 import { layoutAnnotations, drawAnnotations } from './annotations.js';
 import { drawPointer, needsPointerOverlay } from './pointer.js';
@@ -17,6 +18,19 @@ function canvasFor(geometry) {
   canvas.width = Math.max(2, Math.ceil(geometry.region.width / 2) * 2);
   canvas.height = Math.max(2, Math.ceil(geometry.region.height / 2) * 2);
   return canvas;
+}
+function annotatedFrame(geometry) {
+  const canvas = canvasFor(geometry), ctx = canvas.getContext('2d');
+  cropFrame(ctx, geometry);
+  ctx.font = 'bold 14px sans-serif';
+  const annotations = layoutAnnotations(geometry, canvas, text => ctx.measureText(text).width);
+  const output = document.createElement('canvas'); output.width = canvas.width; output.height = annotations.height;
+  const annotated = output.getContext('2d');
+  annotated.fillStyle = '#fff'; annotated.fillRect(0, 0, output.width, output.height);
+  annotated.drawImage(canvas, 0, 0);
+  drawAnnotations(annotated, annotations);
+  const frame = { width: video.videoWidth, height: video.videoHeight };
+  return { canvas: output, annotations, capture: { frame, content: frameContentRect(frame, geometry.viewport) } };
 }
 async function upload(kind, blob, metadata) {
   const encoded = new TextEncoder().encode(JSON.stringify({ ...metadata, sessionId }));
@@ -45,22 +59,23 @@ async function command(name, args = {}) {
     return result;
   }
   requireMedia();
+  if (name === 'callout') {
+    const state = recording;
+    if (!state || state.stopping) throw new Error('Start a recording before adding a callout.');
+    const geometry = await background('resolve', { region: state.geometry.region, padding: 0, highlight: [{ target: args.target, label: args.label, style: 'box' }] });
+    if (recording !== state || state.stopping) throw new Error('The recording ended while resolving the callout target.');
+    if (geometry.viewport.width !== state.geometry.viewport.width || geometry.viewport.height !== state.geometry.viewport.height) throw new Error('The viewport changed during recording. Start a new clip before adding a callout.');
+    const snapshot = annotatedFrame(geometry);
+    const entry = prepareCallout(state, snapshot.canvas, { target: args.target, label: args.label, geometry, annotations: snapshot.annotations }, args.holdSeconds);
+    const saved = await upload('callout', await new Promise(resolve => snapshot.canvas.toBlob(resolve, 'image/png')), { label: args.label, geometry });
+    state.callouts.push({ ...entry, calloutId: saved.calloutId });
+    return { sessionId, recording: recording === state && !state.stopping, calloutId: saved.calloutId, holdSeconds: args.holdSeconds, message: 'Callout saved. Continue immediately; the reading pause will be inserted when the clip is exported.' };
+  }
   const geometry = await background('resolve', args);
   active = geometry.tabActive;
   if (name === 'screenshot') {
-    const canvas = canvasFor(geometry);
-    const ctx = canvas.getContext('2d');
-    cropFrame(ctx, geometry);
-    ctx.font = 'bold 14px sans-serif';
-    const annotations = layoutAnnotations(geometry, canvas, text => ctx.measureText(text).width);
-    const output = document.createElement('canvas'); output.width = canvas.width; output.height = annotations.height;
-    const annotated = output.getContext('2d');
-    annotated.fillStyle = '#fff'; annotated.fillRect(0, 0, output.width, output.height);
-    annotated.drawImage(canvas, 0, 0);
-    drawAnnotations(annotated, annotations);
-    const frame = { width: video.videoWidth, height: video.videoHeight };
-    const capture = { frame, content: frameContentRect(frame, geometry.viewport) };
-    return upload('screenshot', await new Promise(resolve => output.toBlob(resolve, 'image/png')), { name: args.name, geometry, capture, annotations, warnings: [...warnings] });
+    const snapshot = annotatedFrame(geometry);
+    return upload('screenshot', await new Promise(resolve => snapshot.canvas.toBlob(resolve, 'image/png')), { name: args.name, geometry, capture: snapshot.capture, annotations: snapshot.annotations, warnings: [...warnings] });
   }
   if (name !== 'start') throw new Error(`Unknown command: ${name}`);
   if (recording || completed) throw new Error('Retrieve the previous recording with stop first.');
@@ -72,7 +87,7 @@ async function command(name, args = {}) {
   const mimeType = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8'].find(type => MediaRecorder.isTypeSupported(type));
   if (!mimeType) throw new Error('WebM recording is unavailable in this browser.');
   const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 2500000 });
-  const state = { canvas, ctx, stream, recorder, chunks: [], started: Date.now(), geometry, args, events: [], samples: [], previous: null, nextSample: 0, warnings: [...warnings] };
+  const state = { canvas, ctx, stream, recorder, chunks: [], started: Date.now(), geometry, args, events: [], samples: [], callouts: [], previous: null, nextSample: 0, warnings: [...warnings] };
   recording = state;
   recorder.ondataavailable = event => { if (event.data.size) state.chunks.push(event.data); };
   state.done = new Promise((resolve, reject) => {
@@ -106,12 +121,13 @@ async function command(name, args = {}) {
 async function finish() {
   const state = recording;
   if (!state) return;
+  state.stopping = true;
   clearInterval(state.timer); clearTimeout(state.limit);
   if (state.recorder.state !== 'inactive') state.recorder.stop();
   await state.done;
   if (recording !== state) return;
   state.stream.getTracks().forEach(track => track.stop());
-  completed = { blob: new Blob(state.chunks, { type: state.recorder.mimeType }), metadata: { geometry: state.geometry, duration: (Date.now() - state.started) / 1000, events: state.events, samples: state.samples, preserveTiming: state.args.preserveTiming, pointerRendering: source === 'display' ? 'reconstructed-from-page-events' : 'native-with-background-fallback', warnings: state.warnings } };
+  completed = { blob: new Blob(state.chunks, { type: state.recorder.mimeType }), metadata: { geometry: state.geometry, duration: (Date.now() - state.started) / 1000, events: state.events, samples: state.samples, callouts: state.callouts, preserveTiming: state.args.preserveTiming, pointerRendering: source === 'display' ? 'reconstructed-from-page-events' : 'native-with-background-fallback', warnings: state.warnings } };
   recording = null;
 }
 
