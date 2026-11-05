@@ -13,4 +13,4 @@ await writeFile(path.join(runtime, 'config.json'), JSON.stringify(settings), { m
 await cp(path.join(root, 'extension'), path.join(root, 'dist/extension'), { recursive: true });
 await cp(path.join(root, 'src/timeline.js'), path.join(root, 'dist/extension/analysis.js'));
 await writeFile(path.join(root, 'dist/extension/config.js'), `export const settings = ${JSON.stringify(settings)};\n`, { mode: 0o600 });
-console.log(`Extension: ${path.join(root, 'dist/extension')}\nDemo: http://127.0.0.1:${settings.port}/demo\nStart: npm start`);
+console.log(`Extension: ${path.join(root, 'dist/extension')}\nDemo: http://127.0.0.1:${settings.port}/demo\nManaged installation: npm run install:local (macOS). Manual service: npm start`);

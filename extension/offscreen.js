@@ -53,7 +53,7 @@ async function command(name, args = {}) {
 function connect() {
   const connection = new WebSocket(`ws://127.0.0.1:${settings.port}`);
   socket = connection;
-  connection.onopen = () => connection.send(JSON.stringify({ type: 'hello', token: settings.token }));
+  connection.onopen = () => connection.send(JSON.stringify({ type: 'hello', token: settings.token, version: chrome.runtime.getManifest().version }));
   connection.onmessage = async event => {
     const message = JSON.parse(event.data);
     if (!message.id) return;
