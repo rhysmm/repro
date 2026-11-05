@@ -4,7 +4,7 @@ import { planTimeline, visualChange } from '../src/timeline.js';
 import { schemas } from '../src/schema.js';
 test('idle gaps are removed while preserving interaction context and an omission record', () => {
   const timeline = planTimeline(20, [], [{ t: 2, type: 'pointerdown' }, { t: 17, type: 'pointerdown' }]);
-  assert.deepEqual(timeline, [{ start: 0, end: 4, omittedBefore: 0 }, { start: 16.4, end: 20, omittedBefore: 12.399999999999999 }]);
+  assert.deepEqual(timeline.map(segment => Object.fromEntries(Object.entries(segment).map(([key, value]) => [key, Number(value.toFixed(3))]))), [{ start: 0, end: 2.7, omittedBefore: 0 }, { start: 16.4, end: 17.7, omittedBefore: 13.7 }, { start: 19.4, end: 20, omittedBefore: 1.7 }]);
 });
 test('preserveTiming retains real application delays', () => {
   assert.deepEqual(planTimeline(20, [], [], true), [{ start: 0, end: 20, omittedBefore: 0 }]);
@@ -24,4 +24,11 @@ test('region schemas accept unions and reject invalid rectangles', () => {
   assert.equal(schemas.start.parse({ region: [{ testId: 'dialog' }, { role: 'button', name: 'Save' }] }).padding, 24);
   assert.throws(() => schemas.start.parse({ region: { x: 0, y: 0, width: -1, height: 50 } }));
   assert.throws(() => schemas.start.parse({ maxSeconds: 900 }));
+});
+
+test('sub-second idle trimming removes a 0.9-second gap but retains a 0.7-second gap', () => {
+  const cut = planTimeline(10, [], [{ t: 2, type: 'click' }, { t: 4.2, type: 'click' }]);
+  const kept = planTimeline(10, [], [{ t: 2, type: 'click' }, { t: 4, type: 'click' }]);
+  assert.ok(cut.some(segment => Math.abs(segment.omittedBefore - 0.9) < 0.001));
+  assert.ok(kept.some(segment => segment.start === 0 && segment.end === 4.7));
 });

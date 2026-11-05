@@ -4,12 +4,12 @@ export function planTimeline(duration, samples, events, preserveTiming = false) 
   for (const sample of samples) {
     if (sample.changed) windows.push({ start: sample.t - 0.4, end: sample.t + 0.7 });
   }
-  for (const event of events) windows.push({ start: event.t - 0.6, end: event.t + 2 });
+  for (const event of events) windows.push({ start: event.t - 0.6, end: event.t + 0.7 });
   const sorted = windows.map(w => ({ start: Math.max(0, w.start), end: Math.min(duration, w.end) })).filter(w => w.end > w.start).sort((a, b) => a.start - b.start);
   const merged = [];
   for (const window of sorted) {
     const last = merged.at(-1);
-    if (last && window.start - last.end < 2) last.end = Math.max(last.end, window.end);
+    if (last && window.start - last.end < 0.8) last.end = Math.max(last.end, window.end);
     else merged.push({ ...window });
   }
   return merged.map((window, index) => ({ ...window, omittedBefore: index ? window.start - merged[index - 1].end : 0 }));

@@ -84,13 +84,14 @@ The capture service (`npm start`) must also be running. The MCP process only pro
 
 ## Timing and evidence fidelity
 
-The recorder samples a downscaled clean crop five times per second. Changes above a small area/color threshold and actual page input events identify activity. It retains context around interactions and collapses idle gaps of at least two seconds. Small blinking carets generally do not retain an entire gap. The recording itself is 15fps; click rings and the elapsed-time clock are composed into the output, not injected into the page.
+The recorder samples a downscaled clean crop five times per second. Changes above a small area/color threshold and actual page input events identify activity. It retains 0.6 seconds before and 0.7 seconds after interactions, and collapses idle gaps of at least 0.8 seconds between retained activity windows. Visual changes retain their own context. The initial 0.8 seconds and final 0.6 seconds remain. Small blinking carets generally do not retain an entire gap. The recording itself is 15fps; click rings and the elapsed-time clock are composed into the output, not injected into the page.
 
 Every cut shows the omitted duration. `manifest.json` records the original-to-edited timeline, input timestamps, crop, and source URL. `original.webm` preserves the entire cropped recording. `preserveTiming: true` disables trimming for performance bugs or subtle visual changes. The heuristic cannot distinguish agent thinking from an application freeze; use the original and timestamps when timing is evidence. It does not remove all animations, spinners, or large repetitive changes.
 
 ## Current boundaries
 
-- One enabled tab and one recording at a time; local files only.
+- One globally enabled tab and one recording at a time; local files only. All MCP clients share this session. Concurrent starts are rejected, but commands do not carry agent ownership: another client can stop the active recording. Do not use concurrently from independent agents.
+- Opening or attaching to a tab with Codex does not enable it for this extension. Activate the intended tab and invoke Chrome Evidence once before starting clips. Switching the foreground tab does not select a different recording source; background rendering and focus-free browser interaction have not yet been validated.
 - Top-level DOM, open shadow roots, and same-origin frames. Cross-origin frame targeting/click instrumentation and closed shadow roots are not supported. Their pixels can still appear in a viewport capture.
 - Role/name matching supports common native controls and explicit ARIA roles, not the entire accessibility-name specification. Test IDs or CSS selectors are the precise fallback.
 - Captures page content, not Chrome toolbar, native file pickers, or browser permission dialogs.
