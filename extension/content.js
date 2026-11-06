@@ -1,8 +1,8 @@
 (() => {
-  if (globalThis.__chromeEvidenceInstalled?.active) return;
+  if (globalThis.__reproInstalled?.active) return;
   const listeners = new AbortController();
   const state = { active: true, dispose: () => { state.active = false; listeners.abort(); observer.disconnect(); } };
-  globalThis.__chromeEvidenceInstalled = state;
+  globalThis.__reproInstalled = state;
   const observed = new WeakSet();
   const send = async event => {
     if (!state.active) return;

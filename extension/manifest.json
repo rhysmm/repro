@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "Chrome Evidence",
-  "version": "0.9.0",
+  "name": "Repro",
+  "version": "0.9.1",
   "description": "Local cropped evidence capture alongside your existing browser agent.",
   "minimum_chrome_version": "116",
   "permissions": [
@@ -21,9 +21,21 @@
     "type": "module"
   },
   "action": {
-    "default_title": "Enable evidence capture for this tab"
+    "default_title": "Repro — enable capture for this tab",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
   },
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'; connect-src http://127.0.0.1:47321 ws://127.0.0.1:47321"
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
   }
 }

@@ -28,7 +28,7 @@ for (const failure of [
   const { document, context, observers } = page(() => { calls++; return failure(); });
   document.dispatchEvent(new Event('pointerdown'));
   await new Promise(resolve => setImmediate(resolve));
-  assert.equal(context.__chromeEvidenceInstalled.active, false);
+  assert.equal(context.__reproInstalled.active, false);
   assert.equal(observers[0].disconnected, true);
   document.dispatchEvent(new Event('pointerdown'));
   assert.equal(calls, 1);
@@ -41,7 +41,7 @@ test('a temporarily missing receiver does not disable page events', async () => 
   document.dispatchEvent(new Event('pointerdown'));
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(calls, 2);
-  assert.equal(context.__chromeEvidenceInstalled.active, true);
+  assert.equal(context.__reproInstalled.active, true);
   assert.equal(observers[0].disconnected, false);
 });
 function keyEvent(key, options = {}) {

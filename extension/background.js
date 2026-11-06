@@ -209,7 +209,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     if (message.type === 'released') return transact(async queue => {
       const request = queue.release(message.options.sessionId);
       await setApprovalBanner(chrome.scripting, request, false);
-      await badge(request.tabId, '', 'Chrome Evidence');
+      await badge(request.tabId, '', 'Repro');
       await advance(queue);
       return { released: true };
     });

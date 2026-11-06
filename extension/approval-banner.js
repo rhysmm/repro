@@ -1,6 +1,6 @@
 // This function is serialized by chrome.scripting; keep it self-contained.
 export function updateApprovalBanner(request, visible) {
-  const key = '__chromeEvidenceApprovalNotice';
+  const key = '__reproApprovalNotice';
   const existing = globalThis[key];
   if (!visible) {
     if (existing?.requestId === request.requestId) existing.remove();
@@ -9,7 +9,7 @@ export function updateApprovalBanner(request, visible) {
   if (location.href !== request.url || Date.now() >= request.expiresAt) return { shown: false, reason: 'page_changed_or_expired' };
   existing?.remove();
   const host = document.createElement('div');
-  host.setAttribute('data-chrome-evidence-approval', '');
+  host.setAttribute('data-repro-approval', '');
   host.style.cssText = 'all:initial!important;position:fixed!important;top:16px!important;right:20px!important;width:min(390px,calc(100vw - 40px))!important;z-index:2147483647!important;display:block!important;pointer-events:none!important;color-scheme:light!important;';
   const shadow = host.attachShadow({ mode: 'closed' });
   const style = new CSSStyleSheet();
@@ -33,7 +33,7 @@ export function updateApprovalBanner(request, visible) {
   notice.className = 'notice';
   notice.setAttribute('role', 'status');
   notice.setAttribute('aria-live', 'polite');
-  notice.setAttribute('aria-label', 'Chrome Evidence capture approval');
+  notice.setAttribute('aria-label', 'Repro capture approval');
   const element = (tag, className, text) => {
     const node = document.createElement(tag);
     node.className = className;
@@ -47,9 +47,9 @@ export function updateApprovalBanner(request, visible) {
   arrow.setAttribute('d', 'M95 8L175 88H125V238H65V88H15Z');
   svg.append(arrow);
   const eyebrow = element('div', 'eyebrow');
-  eyebrow.append(element('span', 'dot'), 'Chrome Evidence');
+  eyebrow.append(element('span', 'dot'), 'Repro');
   const instruction = element('p', '');
-  instruction.append('Click the pinned ', element('strong', '', 'Chrome Evidence'), ' extension marked ', element('span', 'rec', 'REC?'), ' in the toolbar above.');
+  instruction.append('Click the pinned ', element('strong', '', 'Repro'), ' extension marked ', element('span', 'rec', 'REC?'), ' in the toolbar above.');
   const foot = element('div', 'foot');
   const cancel = element('button', '', 'Not now'); cancel.type = 'button';
   foot.append(element('span', 'waiting', 'Waiting for your approval'), cancel);
@@ -77,7 +77,7 @@ export async function setApprovalBanner(scripting, request, visible) {
     return results?.[0]?.result || { shown: false };
   } catch (error) {
     if (/Cannot access contents of|Missing host permission|Cannot access a chrome:|No tab with id|Invalid tab ID|The tab was closed|Frame with ID 0 was removed|Cannot access a chrome-extension:|extensions gallery cannot be scripted/i.test(error.message)) {
-      return { shown: false, reason: 'page_unavailable_or_site_access_required', message: 'Chrome could not show the approval banner. Click the REC? toolbar icon to approve. To show banners, allow Chrome Evidence site access in Chrome’s extension settings.' };
+      return { shown: false, reason: 'page_unavailable_or_site_access_required', message: 'Chrome could not show the approval banner. Click the REC? toolbar icon to approve. To show banners, allow Repro site access in Chrome’s extension settings.' };
     }
     throw error;
   }

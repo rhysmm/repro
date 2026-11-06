@@ -1,10 +1,10 @@
-# Chrome Evidence
+# Repro
 
 Let an agent save cropped screen recordings and annotated screenshots while it uses Chrome. Useful for bug reports, test evidence, and short demonstrations. Works alongside the agent’s existing browser controls.
 
 ## Examples
 
-Captured with Chrome Evidence on the included demo page. Click an animation for the MP4.
+Captured with Repro on the included demo page. Click an animation for the MP4.
 
 **Cropped recordings with click indicators and idle time removed.** This 21-second session becomes a six-second clip.
 
@@ -35,8 +35,8 @@ Multiple agents can record separate tabs at the same time. Files are saved local
 Requires macOS, Chrome 116+, Codex, Node 22+, and FFmpeg. With Homebrew, install missing dependencies using `brew install node ffmpeg`.
 
 ```sh
-git clone https://github.com/rmessenger/chrome-evidence.git
-cd chrome-evidence
+git clone https://github.com/rmessenger/repro.git
+cd repro
 npm ci && npm run install:local
 ```
 
@@ -44,7 +44,7 @@ Keep this folder in place. The installer configures Codex and starts the local s
 
 1. In Chrome, open `chrome://extensions` and enable **Developer mode**.
 2. Choose **Load unpacked** and select this repo’s **dist/extension** folder.
-3. Accept website access if prompted, then pin **Chrome Evidence** from the Extensions menu.
+3. Accept website access if prompted, then pin **Repro** from the Extensions menu.
 4. Restart Codex to load the tools.
 
 ## Use

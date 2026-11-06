@@ -8,6 +8,8 @@ The managed installer is macOS-only. It registers an authenticated HTTP MCP endp
 
 Keep the checkout in place: it is the installed application. Rerun installation if you move it or change Node/FFmpeg paths. Install only one checkout per user. The service listens on `127.0.0.1:47321`.
 
+Upgrading from Chrome Evidence migrates its MCP settings and managed service to `repro`, preserving tool policies and the pairing token. After moving an unpacked extension, load `dist/extension` from its new location in Chrome, or keep a compatibility symlink at the old path and reload the existing extension. Restart Codex to load the renamed MCP entry.
+
 ## Updates and troubleshooting
 
 Finish any active recordings before updating. After pulling an update, run the same command:
@@ -16,7 +18,7 @@ Finish any active recordings before updating. After pulling an update, run the s
 npm ci && npm run install:local
 ```
 
-Reload Chrome Evidence in `chrome://extensions` when its extension files change. Refresh the Codex MCP connection when tool definitions change. Reinstallation keeps the pairing token and capture files.
+Reload Repro in `chrome://extensions` when its extension files change. Refresh the Codex MCP connection when tool definitions change. Reinstallation keeps the pairing token and capture files.
 
 ```sh
 npm run service:status

@@ -1,23 +1,30 @@
 import { parse, stringify } from 'smol-toml';
 import { isDeepStrictEqual } from 'node:util';
-const serverName = 'chrome-evidence';
+const serverName = 'repro';
+const legacyServerName = 'chrome-evidence';
+export function installedMcpConfiguration(text) {
+  const servers = parse(text).mcp_servers;
+  if (servers?.[serverName] && servers?.[legacyServerName]) throw new Error('Both Repro and the legacy Chrome Evidence MCP entries exist. Resolve the duplicate entries before installing; no configuration was changed.');
+  return servers?.[serverName] ?? servers?.[legacyServerName];
+}
 export function updateCodexConfig(text, replacement) {
   const before = parse(text);
   const sections = text.split(/(?=^[ \t]*\[)/m);
   const kept = sections.filter(section => {
     const header = section.split('\n', 1)[0].trim();
-    return !/^\[\s*(?:mcp_servers|"mcp_servers"|'mcp_servers')\s*\.\s*(?:chrome-evidence|"chrome-evidence"|'chrome-evidence')\s*(?:\.|\])/.test(header);
+    return !/^\[\s*(?:mcp_servers|"mcp_servers"|'mcp_servers')\s*\.\s*(?:repro|"repro"|'repro'|chrome-evidence|"chrome-evidence"|'chrome-evidence')\s*(?:\.|\])/.test(header);
   }).join('');
   const result = kept.trimEnd() + '\n' + (replacement ? '\n' + stringify({ mcp_servers: { [serverName]: replacement } }) : '');
   const after = parse(result);
   const withoutOurs = config => {
     const copy = structuredClone(config);
     delete copy.mcp_servers?.[serverName];
+    delete copy.mcp_servers?.[legacyServerName];
     if (copy.mcp_servers && !Object.keys(copy.mcp_servers).length) delete copy.mcp_servers;
     return copy;
   };
-  if (!isDeepStrictEqual(withoutOurs(before), withoutOurs(after)) || !isDeepStrictEqual(structuredClone(after.mcp_servers?.[serverName]), structuredClone(replacement))) {
-    throw new Error('Cannot safely update this Codex configuration layout. No configuration was changed. Use a normal [mcp_servers.chrome-evidence] table rather than inline or dotted-key server definitions.');
+  if (!isDeepStrictEqual(withoutOurs(before), withoutOurs(after)) || !isDeepStrictEqual(structuredClone(after.mcp_servers?.[serverName]), structuredClone(replacement)) || after.mcp_servers?.[legacyServerName]) {
+    throw new Error('Cannot safely update this Codex configuration layout. No configuration was changed. Use a normal [mcp_servers.repro] table rather than inline or dotted-key server definitions.');
   }
   return result;
 }

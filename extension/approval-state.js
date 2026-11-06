@@ -11,6 +11,6 @@ export function verifyCaptureHandle(expected, actual) {
 export function verifyToolbarApproval(request, tab, now = Date.now()) {
   if (request.approval !== 'toolbar') throw new Error('Use the open sharing approval window for this request.');
   if (now > request.expiresAt) throw new Error('This capture request has expired. Ask the agent to request capture again.');
-  if (tab.id !== request.tabId) throw new Error('Wrong tab. Click Chrome Evidence on the tab selected by the agent. Nothing was recorded.');
+  if (tab.id !== request.tabId) throw new Error('Wrong tab. Click Repro on the tab selected by the agent. Nothing was recorded.');
   approvedTarget(request.url, tab.url);
 }

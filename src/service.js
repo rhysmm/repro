@@ -13,11 +13,11 @@ await mkdir(artifactDirectory, { recursive: true });
 const extensionPath = path.join(root, 'dist/extension');
 const installation = {
   extensionPath,
-  steps: ['Open Chrome and visit chrome://extensions.', 'Enable Developer mode.', `Click Load unpacked and select ${extensionPath}.`, 'Accept website access so approval banners can appear before you click REC. Recording still needs your separate REC click.', 'Pin Chrome Evidence using Chrome’s Extensions menu. Leave Chrome open; the extension connects automatically.'],
-  troubleshooting: 'After a service restart, allow a few seconds for automatic reconnection before asking the user to reload anything. If already installed, check that Chrome Evidence is enabled and reload it in chrome://extensions. Connection status cannot distinguish an uninstalled extension from closed Chrome, a disabled extension, or a connection failure.',
+  steps: ['Open Chrome and visit chrome://extensions.', 'Enable Developer mode.', `Click Load unpacked and select ${extensionPath}.`, 'Accept website access so approval banners can appear before you click REC. Recording still needs your separate REC click.', 'Pin Repro using Chrome’s Extensions menu. Leave Chrome open; the extension connects automatically.'],
+  troubleshooting: 'After a service restart, allow a few seconds for automatic reconnection before asking the user to reload anything. If already installed, check that Repro is enabled and reload it in chrome://extensions. Connection status cannot distinguish an uninstalled extension from closed Chrome, a disabled extension, or a connection failure.',
   agentAction: 'Walk the user through these steps. Do not try to install the extension or approve capture on their behalf. Once connected, retry capture_status, then request a tab through capture_start.',
 };
-const readiness = () => ({ service: 'chrome-evidence', version, extensionConnected: extension?.readyState === 1, extensionVersion, extensionPath });
+const readiness = () => ({ service: 'repro', version, extensionConnected: extension?.readyState === 1, extensionVersion, extensionPath });
 let extensionVersion;
 let extension;
 const pending = new Map();

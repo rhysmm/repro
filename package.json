@@ -1,6 +1,6 @@
 {
-  "name": "chrome-evidence",
-  "version": "0.9.0",
+  "name": "repro",
+  "version": "0.9.1",
   "private": true,
   "type": "module",
   "description": "Local Chrome evidence capture for agents",
