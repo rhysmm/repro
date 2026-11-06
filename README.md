@@ -137,6 +137,7 @@ The tool catalog supplies names, titles, descriptions, and validated argument sc
 | `capture_status` | Readiness, installation help, and scoped session status |
 | `capture_start` | Cropped video evidence with click indicators and idle trimming |
 | `capture_wait` | Wait up to 50 seconds for queued approval |
+| `capture_callout` | Save an annotated frame for a reading pause inserted at export |
 | `capture_stop` | Save the video and return MP4, WebM, and manifest paths |
 | `capture_screenshot` | Cropped PNGs with boxes, arrows, and labels |
 | `capture_release` | Explicitly end a session or cancel its approval |
@@ -148,6 +149,14 @@ For a screenshot on a new tab, establish and approve a session with `capture_sta
 The optional `src/mcp.js` stdio adapter remains for compatibility and development. The managed installation does not run it; it registers the integrated HTTP endpoint instead. The CLI calls the same validated capture service.
 
 Official documentation: [Codex MCP configuration and server instructions](https://learn.chatgpt.com/docs/extend/mcp?surface=cli), [macOS LaunchAgents](https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/CreatingLaunchdJobs.html).
+
+## Readable keyboard reproductions
+
+Explore quickly, then record a deliberate replay of a confirmed bug. Break a meaningful keyboard sequence into separate actions: type the text, observe the state, add a callout if viewers need to inspect it, then press Ctrl-Z and observe/highlight the result. Labels should explain the action and outcome. Callouts provide reading time in the exported video; the agent does not wait for that duration.
+
+For autocomplete, validation, and animations, wait for the relevant visible state or use a brief targeted pause to capture the transition. Use `preserveTiming: true` when elapsed time or a deliberate idle pause matters, because trimming may shorten it. Avoid global per-keystroke delays. Timing-sensitive bugs must retain their triggering input cadence; explain their before/after states without changing the reproduction.
+
+This guidance is supplied in server instructions, the recording tool description, and successful start/approval responses so existing chats with cached tool descriptions also receive it.
 
 ## Readable callouts during a recording
 
