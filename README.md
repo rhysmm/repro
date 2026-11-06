@@ -1,263 +1,58 @@
 # Chrome Evidence
 
-A local Chrome extension and MCP server for recording bug evidence alongside an agent's existing Chrome browser controls. It does not drive the browser or attach another debugger.
+Let an agent save cropped screen recordings and annotated screenshots while it uses Chrome. Useful for bug reports, test evidence, and short demonstrations. Works alongside the agent’s existing browser controls.
 
-- Cropped video: test ID, role + name, CSS selector, viewport rectangle, or a union of targets.
-- Thin, unfilled click rings with Chrome’s native pointer (reconstructed for the optional sharing-picker flow).
-- Independent multi-tab capture sessions with queued, one-click approvals.
-- PNG screenshots with red boxes, arrows, and optional labels.
-- Screenshot boxes resolve element targets at capture time; labels wrap and avoid collisions, with a numbered legend for crowded crops.
-- Automatic idle trimming without timing overlays on the video.
-- Original WebM plus reviewable H.264 MP4 and a JSON timing manifest.
-- Compact MCP responses containing local file paths. No frames or base64 in the agent context.
+## Examples
 
-## Install on macOS
+Captured with Chrome Evidence on the included demo page. Click an animation for the MP4.
 
-Requires Node 22 or newer, npm, FFmpeg (`ffmpeg` and `ffprobe`), Chrome 116+, and Codex. If needed, install prerequisites with `brew install node ffmpeg`.
+**Cropped recordings with click indicators and idle time removed.** This 21-second session becomes a six-second clip.
 
-Clone the repository into a location you intend to keep, then run:
+[![Cropped recording with visible clicks and idle gaps removed](docs/media/cropped-interactions.gif)](docs/media/cropped-interactions.mp4)
+
+**Keyboard actions stay readable.** Shortcuts and action keys appear in order; repeated keys become “Tab ×3.” Ordinary typing is omitted from the badge.
+
+[![Keyboard badges showing Tab, Enter, Tab and repeated Tab presses](docs/media/keyboard-sequences.gif)](docs/media/keyboard-sequences.mp4)
+
+**Pause on something worth inspecting.** The agent adds a labelled box and a reading pause to the final video, then carries on working.
+
+[![A labelled result held for three seconds before the next action](docs/media/reading-pause.gif)](docs/media/reading-pause.mp4)
+
+**Screenshots with boxes, arrows, and labels.** Target a page element or choose a region.
+
+![Cropped screenshot with a labelled box and arrow](docs/media/annotated-screenshot.png)
+
+**Capture just the relevant part.** Labels move into a legend when the crop is too tight.
+
+![Tightly cropped buttons with a numbered label legend](docs/media/compact-labels.png)
+
+![A screenshot cropped to only the result message](docs/media/cropped-screenshot.png)
+
+Multiple agents can record separate tabs at the same time. Files are saved locally as MP4 videos and PNG screenshots; the original recording is kept too.
+
+## Install
+
+Requires macOS, Chrome 116+, Codex, Node 22+, and FFmpeg. With Homebrew, install missing dependencies using `brew install node ffmpeg`.
 
 ```sh
+git clone https://github.com/rmessenger/chrome-evidence.git
+cd chrome-evidence
 npm ci && npm run install:local
 ```
 
-No `sudo` is needed. The installer:
+Keep this folder in place. The installer configures Codex and starts the local service automatically.
 
-- Builds the unpacked extension in `dist/extension` and creates a private local pairing token.
-- Installs a per-user macOS LaunchAgent (`dev.chrome-evidence.service`) that starts at login and restarts the service if it crashes.
-- Registers `chrome-evidence` as an authenticated HTTP MCP server in your Codex user configuration (`$CODEX_HOME/config.toml`, or `~/.codex/config.toml`). It replaces an earlier Chrome Evidence stdio entry while preserving unrelated configuration and tool policies. Backups are stored privately under `.runtime/`.
-- Checks that the service is healthy and prints the exact Chrome extension folder.
+1. In Chrome, open `chrome://extensions` and enable **Developer mode**.
+2. Choose **Load unpacked** and select this repo’s **dist/extension** folder.
+3. Accept website access if prompted, then pin **Chrome Evidence** from the Extensions menu.
+4. Restart Codex to load the tools.
 
-The checkout is the installed application; keep it in place. Paths to Node and FFmpeg are resolved at install time. If you move the checkout or change your Node/FFmpeg installation, rerun the installer from the new location. Do not install multiple checkouts simultaneously; the managed service and port are shared per user.
+## Use
 
-### Manual Chrome step
+Ask your agent, for example:
 
-1. Open Chrome and visit `chrome://extensions`.
-2. Turn on **Developer mode** in the top-right corner.
-3. Click **Load unpacked**.
-4. Select this repository’s **`dist/extension`** folder, not the source `extension` folder. The installer prints its full path.
-5. Allow site access on HTTP/HTTPS websites when Chrome asks. This lets the extension show an approval banner before you click REC.
-6. Open Chrome’s Extensions menu (puzzle icon) and pin **Chrome Evidence**.
+> Record me publishing a post. Capture only the publish panel, pause on the result with a label, and save an annotated screenshot.
 
-For an existing unpacked installation, click **Reload** instead. When upgrading from a version before 0.6.0, Chrome may disable the extension until you accept its new website-access permission; re-enable it and accept that prompt. The extension connects to the service automatically. Refresh/restart the MCP connection in Codex after installation; an existing chat may need a new connection or chat to receive the updated tool catalog. You do not need to keep a terminal open or start an MCP process manually.
+The agent selects the tab and requests capture. When the banner appears, click the pinned **REC?** extension icon once. The agent continues automatically—no chat reply needed. That tab stays approved for later clips and screenshots; it isn’t recording between clips.
 
-### Normal operation
-
-There are two persistent components: the Chrome extension and one local service containing both the MCP endpoint and capture bridge. Codex connects to `http://127.0.0.1:47321/mcp`. Multiple clients share this service; their recording sessions remain independent. Temporary FFmpeg processes encode requested videos. A running service or enabled tab does not continually save video to disk.
-
-The agent supplies a Chrome tab ID and its exact current URL to `capture_start`. The extension brings that tab forward, shows **REC?** on its icon, and places an upper-right page banner explaining that an agent wants to capture clips/screenshots. An upward arrow points toward the Chrome toolbar; its exact alignment depends on where the icon is pinned. Click the toolbar icon once to approve. The banner is removed before capture starts, so it does not appear in evidence. **Not now** declines the request and advances the approval queue. Banners also disappear on cancellation, expiry, or navigation to a different URL. No tab picker or popup is needed. Requests are queued; only the presented request focuses its tab, and its two-minute approval deadline starts then. Existing recordings continue while another request awaits approval.
-
-Agents should call `capture_wait` immediately after requesting capture. Chrome supplies the approval result; no chat reply or second confirmation is needed. After a full 50-second wait still awaiting approval, the agent may give a brief non-blocking reminder and wait again. Queued requests wait quietly. This guidance is included in tool descriptions and live start/wait results so existing chats receive it even with a cached tool catalog.
-
-The stream remains active between clips until explicitly released, the tab closes, or Chrome stops sharing. No microphone or tab audio is captured. Completed clips remain in memory until retrieved. Reloading the extension or restarting Chrome ends its capture sessions and requires new approvals. A local-service restart reconnects to the extension; in-flight commands fail explicitly and must be checked before retrying, since an action may already have executed. It does not intentionally end browser capture sessions.
-
-The alternative `approval: "picker"` flow uses Chrome’s sharing picker, verifies the selected tab, and closes its approval window after recording starts. Chrome/macOS may require screen-recording permission and a Chrome restart for that flow.
-
-### Updates, diagnostics, and removal
-
-Finish any active recordings before updating. After pulling an update, run the same command:
-
-```sh
-npm ci && npm run install:local
-```
-
-Reload Chrome Evidence in `chrome://extensions` when its extension files change. Refresh the Codex MCP connection when tool definitions change. Reinstallation keeps the pairing token and capture files.
-
-```sh
-npm run service:status
-npm run service:restart
-npm run uninstall:local
-```
-
-Logs are in `.runtime/service.log` and `.runtime/service-error.log`. Uninstall removes the LaunchAgent and this service’s MCP entry; it keeps recordings and pairing settings. Remove the extension manually through `chrome://extensions` if desired.
-
-If the port is already occupied, the installer stops with an explanation. For an earlier manual setup, stop its `npm start` process and rerun installation; the installer does not kill unowned processes. Backups of your Codex configuration are kept in `.runtime/codex-config-backup-*.toml`.
-
-If Chrome is closed or the extension is unavailable, MCP still connects. Its initialization instructions and `capture_status` provide the exact extension path and the manual installation steps. A disconnected extension might be uninstalled, disabled, or simply in a closed browser; the agent should explain that distinction. If the service itself is unavailable, MCP cannot provide setup help: run `npm run service:status` or rerun installation.
-
-`.runtime/`, `dist/`, and `artifacts/` are ignored by Git. Generated configuration contains a local pairing token: do not share generated files or configuration backups. The HTTP service binds only to `127.0.0.1`, checks the host and token, and rejects browser-origin MCP requests. Each machine needs its own installation. Website access enables the pre-approval banner; it does not authorize recording. Capturing a new tab still requires the user’s toolbar click. No page input instrumentation is installed until approval. If site access is withheld or the page is restricted, the agent receives a banner-unavailable explanation and toolbar approval remains available where Chrome permits capture.
-
-### Manual development or other platforms
-
-Managed installation is currently macOS-only. For manual operation:
-
-```sh
-npm ci
-npm run setup
-npm start
-```
-
-The service still exposes HTTP MCP. Configure the client with the local `/mcp` URL and an Authorization bearer header using the private token in `.runtime/config.json`. Use a platform-specific process manager if you need automatic startup. Do not run a manual service while the macOS-managed service is using the same port.
-
-## Agent workflow
-
-1. `capture_start` with `tabId`, exact current `url`, and optional region.
-2. Save the returned `sessionId`. The user clicks the toolbar icon once when the requested tab is presented. If start returns `awaiting_approval` or `queued`, call `capture_wait` with the returned `sessionId` and `requestId`. Begin interactions only when `recording` is true. A pending request can be waited on again.
-3. Interact using the normal Chrome browser tools.
-4. `capture_stop` with `sessionId` to receive the clip, original, and manifest paths.
-5. Pass the same `sessionId` to start additional clips or use `capture_screenshot` for annotated static images. The same enabled tab needs no additional approval between clips.
-6. Leave the session enabled between testing sessions. Use `capture_release` with its `sessionId` only when you want to stop sharing or cancel a pending approval.
-
-The crop is fixed in viewport coordinates for a clip. Scroll relevant elements into view before starting. Avoid resizing the browser during a clip. Use a larger container to include menus or other content that appears later. Missing or ambiguous targets produce errors rather than silently selecting something else. Codex's private accessibility element numbers are not portable to this extension.
-
-CLI and MCP use exactly the same validation and service:
-
-```sh
-npm run capture -- status
-npm run capture -- start '{"tabId":1234,"url":"https://example.com/settings","region":{"testId":"publish-dialog"}}'
-npm run capture -- wait '{"sessionId":"<session UUID>","requestId":"<UUID returned by start>"}'
-# Use the existing Chrome controls here.
-npm run capture -- stop '{"sessionId":"<session UUID>","name":"Publish failed"}'
-npm run capture -- screenshot '{"sessionId":"<session UUID>","region":{"testId":"publish-dialog"},"highlight":[{"target":{"role":"button","name":"Publish"},"label":"No response"}]}'
-npm run capture -- release '{"sessionId":"<session UUID>"}'
-```
-
-Other region examples:
-
-```json
-{"region":{"selector":".settings-panel"}}
-{"region":{"role":"dialog","name":"Publish post"},"padding":32}
-{"region":[{"testId":"title"},{"testId":"error"}]}
-{"region":{"x":100,"y":80,"width":700,"height":500},"padding":0}
-{"preserveTiming":true,"maxSeconds":30}
-```
-
-Screenshot highlights accept `style: "box"` (default) or `"arrow"`. Use a crop with enough space for the label. With no region, capture uses the visible viewport. Default clip limit is 90 seconds, maximum 180. After automatic stop, call `stop` to retrieve the completed clip before starting another.
-
-## What the agent sees
-
-The server identifies itself as **Chrome Evidence — screenshots and recordings**, configured under `chrome-evidence`. At initialization, it provides server-wide instructions that begin:
-
-> Use Chrome Evidence to save cropped screenshots, annotated PNGs, and short screen recordings while testing or demonstrating websites with your existing Chrome browser controls. It adds click indicators and trims idle time automatically.
-
-The tool catalog supplies names, titles, descriptions, and validated argument schemas:
-
-| Tool | Purpose |
-| --- | --- |
-| `capture_status` | Readiness, installation help, and scoped session status |
-| `capture_start` | Cropped video evidence with click indicators and idle trimming |
-| `capture_wait` | Wait up to 50 seconds for queued approval |
-| `capture_callout` | Save an annotated frame for a reading pause inserted at export |
-| `capture_stop` | Save the video and return MP4, WebM, and manifest paths |
-| `capture_screenshot` | Cropped PNGs with boxes, arrows, and labels |
-| `capture_release` | Explicitly end a session or cancel its approval |
-
-Codex may display names with a server prefix or load tools on demand; exact presentation depends on the client. These descriptions explain when to use capture, but cannot guarantee the agent chooses it every time. For an explicit instruction, say “Use Chrome Evidence for screenshots and recordings.” Browser tools remain responsible for navigating and clicking; this service supplies saved evidence. Native browser screenshots can still be used for immediate UI observation.
-
-For a screenshot on a new tab, establish and approve a session with `capture_start`, retrieve its initial clip with `capture_stop`, then call `capture_screenshot`. Existing approved sessions need no new approval.
-
-The optional `src/mcp.js` stdio adapter remains for compatibility and development. The managed installation does not run it; it registers the integrated HTTP endpoint instead. The CLI calls the same validated capture service.
-
-Official documentation: [Codex MCP configuration and server instructions](https://learn.chatgpt.com/docs/extend/mcp?surface=cli), [macOS LaunchAgents](https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/CreatingLaunchdJobs.html).
-
-## Keyboard event badges
-
-Recordings automatically show action keys and shortcuts as an ordered “Recent keys” badge, for example **Tab → Enter → Tab**. Ordinary letters, digits, text-entry spaces, IME composition, and modifier-only presses are omitted. Consecutive repeats collapse to **Tab ×3**; separated repeats retain their order. Event metadata contains the shortcut label, never ordinary typed characters, input values, or clipboard contents.
-
-Keys within 0.8 seconds form a burst. The badge appears after that burst’s last key, so it never announces an action before it happens. Each sequence stays visible for at least 1.5 seconds. Long sequences wrap and paginate in order; queued badges are summaries of recent keys, not a claim that every key occurs at display time. Idle trimming keeps keyboard context. If recording ends before badges finish, export briefly holds the final frame so no queued badge is lost. Very small crops use a readable footer instead of squeezing text into the content. The manifest records badge timing and any extra tail time; the original WebM stays unchanged.
-
-This works only for keyboard events delivered to the page. Browser/OS-reserved shortcuts and keys inside inaccessible cross-origin frames may not be observed. No extra tool call or typing delay is needed.
-
-## Readable keyboard reproductions
-
-Explore quickly, then record a deliberate replay of a confirmed bug. Break a meaningful keyboard sequence into separate actions: type the text, observe the state, add a callout if viewers need to inspect it, then press Ctrl-Z and observe/highlight the result. Labels should explain the action and outcome. Callouts provide reading time in the exported video; the agent does not wait for that duration.
-
-For autocomplete, validation, and animations, wait for the relevant visible state or use a brief targeted pause to capture the transition. Use `preserveTiming: true` when elapsed time or a deliberate idle pause matters, because trimming may shorten it. Avoid global per-keystroke delays. Timing-sensitive bugs must retain their triggering input cadence; explain their before/after states without changing the reproduction.
-
-This guidance is supplied in server instructions, the recording tool description, and successful start/approval responses so existing chats with cached tool descriptions also receive it.
-
-## Readable callouts during a recording
-
-At an important result, call `capture_callout`:
-
-```json
-{
-  "sessionId": "the-active-session-id",
-  "target": { "text": "Saved successfully" },
-  "label": "The saved state is visible here",
-  "holdSeconds": 3
-}
-```
-
-The tool saves the current annotated frame and returns immediately, without waiting for `holdSeconds`. Continue interacting normally. When `capture_stop` exports the MP4, it inserts that frame at the captured moment for three seconds by default (1–10 supported), then plays the following source footage. Idle trimming retains context around the callout; it never removes the inserted reading time. No new approval is needed.
-
-The website and live recording never pause. `original.webm` stays uninterrupted and contains no callout inserts. The manifest separates source time, omitted idle time, inserted reading time, and the final playback timeline. Each saved callout PNG is included alongside the exported clip. Use element targets inside the current crop; a changed viewport or crop too small for a readable label produces an actionable error. Up to 20 callouts can be added per clip. The clip’s `maxSeconds` limits source recording time; inserted holds can make the exported video longer.
-
-These are editorial freeze-frames, not application delays. `preserveTiming` preserves the complete original footage, with any requested callouts still added to the exported MP4.
-
-## Timing and evidence fidelity
-
-The recorder samples a downscaled clean crop five times per second. Changes above a small area/color threshold and actual page input events identify activity. It retains 0.6 seconds before and 0.7 seconds after interactions, and collapses idle gaps of at least 0.8 seconds between retained activity windows. Visual changes retain their own context. The initial 0.8 seconds and final 0.6 seconds remain. Small blinking carets generally do not retain an entire gap. The recording itself is 15fps; click rings and the pointer are composed into the output, not injected into the page. Click rings fade over 0.45 seconds. With the sharing-picker flow, the pointer is reconstructed from observed page input positions and remains at the last observed position between events; it is an evidence overlay, not a guaranteed reproduction of the OS cursor shape. Pointer movement alone does not add activity events to the trimming timeline. The direct toolbar flow uses Chrome’s native cursor on the active tab and reconstructs a pointer from page events for inactive tabs. The fallback follows tab activation changes; it holds the last observed position and does not reproduce every native cursor shape. Chrome may still supply its native cursor in the sharing-picker source stream.
-
-Timing information stays in the sidecar file rather than covering the video. `manifest.json` records the original-to-edited timeline, input timestamps, crop, and source URL. `original.webm` preserves the entire cropped recording. `preserveTiming: true` disables trimming for performance bugs or subtle visual changes. The heuristic cannot distinguish agent thinking from an application freeze; use the original and timestamps when timing is evidence. It does not remove all animations, spinners, or large repetitive changes.
-
-## Multiple agents
-
-Every new tab gets an unguessable `sessionId`. Treat it as an ownership capability: pass it to every subsequent operation on that session and do not share it with unrelated agents. There is no global current session. Unscoped status returns counts only; it never lists session handles. A second agent cannot reserve an already-owned tab. Different sessions can record, stop, encode, take screenshots, and wait for approval independently. Per-session operation locks prevent competing changes to a single recorder. Input events are routed using Chrome’s sender tab ID.
-
-The capability prevents accidental cross-agent control; it is not a security boundary against a local process with the pairing token and another session’s handle. An agent that loses its handle cannot rediscover it through global status. Reloading the extension ends all sessions. Save handles in your testing context, or explicitly release sessions before handing their tabs to another agent.
-
-Approvals are serialized across agents. Approving tab A starts its clip, then presents tab B for its own single click. Closing a requested tab, cancelling its session, or expiration advances the queue. A queued request does not consume its two-minute approval window. Expiration is checked during waits and by a periodic Chrome alarm. Each tab has its own badge. The recording source remains bound to its tab when another tab is focused; focus-sensitive application behavior and Chrome’s background throttling can still affect interactions.
-
-## Current boundaries
-
-- One session per tab, with multiple sessions recording simultaneously; local files only. Recording and encoding resource usage increases with the number and size of captures.
-- Opening or attaching to a tab with Codex does not enable it for this extension. Supply its tab ID and exact URL to request user approval before starting clips. Switching the foreground tab does not select a different recording source. Browser control tools may still bring tabs forward for interactions.
-- Top-level DOM, open shadow roots, and same-origin frames. Cross-origin frame targeting/click instrumentation and closed shadow roots are not supported. Their pixels can still appear in a viewport capture.
-- Role/name matching supports common native controls and explicit ARIA roles, not the entire accessibility-name specification. Test IDs or CSS selectors are the precise fallback.
-- Captures page content, not Chrome toolbar, native file pickers, or browser permission dialogs.
-- Fixed crops do not follow moving elements. Navigation may invalidate the region or site instrumentation permissions; start a fresh clip and request approval again when necessary.
-- Original and edited files contain whatever is visible in the crop. There is no automatic redaction.
-
-## Development
-
-```sh
-npm test
-npm run lint
-npm run setup
-```
-
-After rebuilding, reload the extension in Chrome, request capture approval again, and run `npm run service:restart` after server changes (or restart `npm start` for manual development). Tests exercise real FFmpeg encoding and the MCP handshake, along with timing, schemas, approval target checks, wrong-tab cleanup, native picker error propagation, FIFO approval/expiry/cancellation, per-session operation locks, tab ownership, and independent routing through the background worker. `http://127.0.0.1:47321/demo` provides a deterministic interactive fixture for browser validation.
-
-## Live validation (0.4.0)
-
-Validated in Chrome on 2026-11-05 with two independent sessions on separate fixture tabs:
-
-- Simultaneous start requests produced one presented approval and one queued approval. Each required one toolbar click; both recordings then ran together.
-- Tab A recorded a delayed save completing while tab B was active. Its annotated background screenshot showed the completed result.
-- Stopping and encoding A left B recording. B captured another click afterward. Each manifest contained only its own source URL, session ID, and clicks (A: 1, B: 2).
-- Both clips were cropped to 968 × 418. Idle trimming reduced A from 33.9 to about 4.1 seconds and B from 50.1 to about 4.4 seconds; extracted frames were visually inspected.
-- Starting a second clip with A’s existing handle needed no approval. A duplicate reservation of its tab and a stop using an unknown handle were rejected.
-- Final status: two enabled sessions, zero recordings. Sessions were retained for reuse.
-
-Automated tests also cover independent release and approval cancellation/expiry. Native picker fallback retains its existing media tests; the multi-tab live test used toolbar approval.
-
-### Cursor regression (0.4.1)
-
-The initial multi-tab clips exposed a missing cursor on the inactive tab. Toolbar recordings now use a page-event pointer overlay only when the source tab is inactive, switching on Chrome tab activation events. A second live two-tab test verified a visible fallback pointer during the background save and one native pointer on the foreground tab. The captured click frames were inspected separately. All 24 tests and lint pass. Both sessions remain enabled with recording stopped.
-
-### Managed service validation (0.5.0)
-
-Validated fresh registration and repeated installation on macOS, automatic launchd recovery after a forced process crash, and Chrome reconnection. A real HTTP MCP client recorded a 968 × 418 clip across a service restart, retrieved both clicks and the delayed UI update, and saved an annotated screenshot. The 54.1-second recording trimmed to about 4.4 seconds. The approved capture remained enabled afterward.
-
-Automated coverage includes real HTTP MCP initialization/tool discovery without an extension, actionable setup responses, token/origin checks, concurrent clients, configuration preservation/idempotence, and the existing capture tests. macOS login startup is configured by RunAtLoad; this session did not log out to test a fresh login.
-
-### Approval banner and reload recovery (0.6.1)
-
-Validated the upper-right banner and toolbar arrow in Chrome on 2026-11-05. “Not now” declined the request without enabling capture. A new request on the same session displayed the banner again; one toolbar click removed it and started recording. The full-viewport export contained no banner in inspected frames, captured both interactions and the delayed save result, and trimmed 19.4 seconds to 5.4 seconds. The session remained enabled with recording stopped.
-
-All 39 tests and lint pass, including synchronous/asynchronous extension-context invalidation and offscreen startup with only the runtime APIs available to that document. Offscreen version reporting uses generated configuration. Page listeners from this version detach after extension invalidation; pages still carrying older injected listeners need one page refresh after upgrading.
-
-Screenshot rectangles use viewport CSS pixels. Prefer `testId`, `role`/`name`, exact visible `text`, or a unique CSS `selector` for annotation targets; coordinates estimated from resized screenshots may not match the page. Chrome stream letterboxing is removed before cropping. Screenshot manifests include source-frame dimensions, mapped content bounds, and annotation placement for diagnosis.
-
-### Annotation validation (0.7.0)
-
-Live Chrome validation confirmed a 3456 × 2234 source stream contained a 1672 × 981 viewport with vertical padding. Removing that padding before cropping aligned three element-based button boxes in a 968 × 418 screenshot. Long adjacent labels wrapped and moved apart without covering the highlighted buttons. A tightly cropped 316 × 44 button row used a separate numbered legend, and exact visible-text targeting resolved successfully. All 46 tests and lint pass. The earlier removal of elapsed-time and omitted-time video overlays is included; timing details remain in the manifest.
-
-### Exported reading pauses (0.8.1)
-
-Validated in Chrome on 2026-11-05: publish, capture a labelled result frame, then reset. Saving the callout returned in 1.06 seconds, without waiting for its three-second hold. The exported 8.87-second MP4 contains the annotation from 3.00–6.00 seconds and preserves the following reset click. The source recording was 28.56 seconds; idle gaps were trimmed independently of the inserted hold. Exported frames and the playback manifest were inspected. All 54 tests and lint pass, including real encoding checks that retain following source frames and leave the original WebM byte-for-byte unchanged.
-
-### Keyboard badges (0.9.0)
-
-Validated in Chrome on 2026-11-05: Tab → Enter → Tab arrived within 12 milliseconds and remained in order in the exported badge for 1.53 seconds. Three subsequent Tab events appeared as Tab ×3 for another 1.53 seconds. The 970 × 418 panel recording trimmed from 60 seconds to 5.87 seconds, preserving both sequences. Exported frames and the manifest were inspected. All 63 tests and lint pass, including shortcut filtering, ordered bursts, repeated keys, pagination, tiny crops, timing after inserted callouts, and final-frame extension when queued badges outlast the source.
+[Updates, troubleshooting, limitations, and developer reference](docs/reference.md)
