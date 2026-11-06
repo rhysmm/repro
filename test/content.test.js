@@ -44,3 +44,25 @@ test('a temporarily missing receiver does not disable page events', async () => 
   assert.equal(context.__chromeEvidenceInstalled.active, true);
   assert.equal(observers[0].disconnected, false);
 });
+function keyEvent(key, options = {}) {
+  const event = new Event('keydown');
+  Object.assign(event, { key, ...options });
+  return event;
+}
+test('page instrumentation sends meaningful shortcut labels but never ordinary typed characters', async () => {
+  const messages = [];
+  const { document } = page(async message => { messages.push(message.event); });
+  for (const event of [keyEvent('a'), keyEvent('7'), keyEvent('A', { shiftKey: true }), keyEvent('Shift'), keyEvent('z', { ctrlKey: true }), keyEvent('Enter'), keyEvent('Tab', { shiftKey: true }), keyEvent('z', { metaKey: true }), keyEvent('é', { altKey: true }), keyEvent('x', { ctrlKey: true, isComposing: true })]) document.dispatchEvent(event);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(messages.map(message => message.keyLabel), [undefined, undefined, undefined, undefined, 'Ctrl+Z', 'Enter', 'Shift+Tab', 'Cmd+Z', undefined, undefined]);
+  assert.ok(messages.every(message => !Object.hasOwn(message, 'key') && !Object.hasOwn(message, 'code') && !Object.hasOwn(message, 'data')));
+});
+test('space is shown for button activation but not ordinary editable text or AltGraph input', async () => {
+  const messages = [];
+  const { document } = page(async message => { messages.push(message.event); });
+  document.dispatchEvent(keyEvent(' ', { composedPath: () => [{ isContentEditable: true }] }));
+  document.dispatchEvent(keyEvent(' ', { composedPath: () => [{ closest: () => null }] }));
+  document.dispatchEvent(keyEvent('q', { ctrlKey: true, altKey: true, getModifierState: () => true }));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(messages.map(message => message.keyLabel), [undefined, 'Space', undefined]);
+});

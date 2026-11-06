@@ -52,3 +52,18 @@ for (const preserveTiming of [false, true]) test(`export inserts callout frames 
   assert.ok(values.slice(0, values.findIndex(value => value > 75 && value < 85)).every(value => value < 50));
   await assert.rejects(processVideo(directory, { sessionId: crypto.randomUUID(), duration: 12, samples: [], events: [], callouts: [{ at: 4, holdSeconds: 3, calloutId }] }, { calloutRoot: directory }), /another capture session/);
 });
+test('rapid keyboard events remain readable after immediate stop without changing the source recording', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'evidence-keys-'));
+  const original = path.join(directory, 'original.webm');
+  await run('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'color=c=blue:s=100x40:r=15:d=4', '-c:v', 'libvpx-vp9', original]);
+  const before = await readFile(original);
+  const result = await processVideo(directory, { duration: 4, samples: [], events: [{ type: 'keydown', keyLabel: 'Tab', t: 3.9 }, { type: 'keydown', keyLabel: 'Enter', t: 3.91 }, { type: 'keydown', keyLabel: 'Tab', t: 3.92 }], warnings: [], preserveTiming: true });
+  const manifest = JSON.parse(await readFile(result.manifest, 'utf8'));
+  assert.deepEqual(manifest.keyboard.badges[0].rows, ['Tab → Enter → Tab']);
+  assert.ok(manifest.keyboardTailSeconds > 1.4);
+  assert.ok(result.outputDurationSeconds >= manifest.keyboard.badges[0].end - 0.07);
+  const probe = JSON.parse(await run('ffprobe', ['-v', 'error', '-show_streams', '-of', 'json', result.clip]));
+  assert.equal(probe.streams[0].width, 320);
+  assert.ok(probe.streams[0].height > 40);
+  assert.deepEqual(await readFile(original), before);
+});

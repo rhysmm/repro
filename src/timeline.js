@@ -4,7 +4,7 @@ export function planTimeline(duration, samples, events, preserveTiming = false, 
   for (const sample of samples) {
     if (sample.changed) windows.push({ start: sample.t - 0.4, end: sample.t + 0.7 });
   }
-  for (const event of events) windows.push({ start: event.t - 0.6, end: event.t + 0.7 });
+  for (const event of events) windows.push({ start: event.t - 0.6, end: event.t + (event.keyLabel ? 1.5 : 0.7) });
   for (const callout of callouts) windows.push({ start: callout.at - 0.6, end: callout.at + 0.7 });
   const sorted = windows.map(w => ({ start: Math.max(0, w.start), end: Math.min(duration, w.end) })).filter(w => w.end > w.start).sort((a, b) => a.start - b.start);
   const merged = [];

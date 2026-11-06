@@ -12,6 +12,18 @@
       if (!/Receiving end does not exist/.test(error.message)) throw error;
     }
   };
+  function keyboardLabel(event) {
+    if (event.isComposing || event.keyCode === 229 || event.getModifierState?.('AltGraph')) return undefined;
+    const names = { Enter: 'Enter', Tab: 'Tab', Escape: 'Esc', Backspace: 'Backspace', Delete: 'Delete', ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right', Home: 'Home', End: 'End', PageUp: 'Page Up', PageDown: 'Page Down', Insert: 'Insert' };
+    let key = names[event.key];
+    if (!key && /^F(?:[1-9]|1[0-2])$/.test(event.key)) key = event.key;
+    if (!key && ((event.ctrlKey || event.metaKey) && /^[!-~]$/.test(event.key) || event.altKey && /^[a-z0-9]$/i.test(event.key))) key = event.key.toUpperCase();
+    const target = event.composedPath?.()[0] || event.target;
+    const editable = target?.isContentEditable || target?.closest?.('input,textarea,[contenteditable="true"]');
+    if (event.key === ' ' && (!editable || event.ctrlKey || event.metaKey)) key = 'Space';
+    if (!key) return undefined;
+    return [event.ctrlKey && 'Ctrl', event.metaKey && 'Cmd', event.altKey && 'Alt', event.shiftKey && 'Shift', key].filter(Boolean).join('+');
+  }
   function documents(doc = document, offset = { x: 0, y: 0 }) {
     const result = [{ doc, offset }];
     for (const frame of doc.querySelectorAll('iframe')) {
@@ -33,7 +45,8 @@
         if (type === 'pointermove') lastPointerMove = Date.now();
         const offset = documents().find(entry => entry.doc === doc)?.offset || { x: 0, y: 0 };
         const rect = event.target?.getBoundingClientRect?.();
-        send({ type, at: Date.now(), x: type === 'click' ? (rect?.x || 0) + (rect?.width || 0) / 2 + offset.x : (event.clientX || 0) + offset.x, y: type === 'click' ? (rect?.y || 0) + (rect?.height || 0) / 2 + offset.y : (event.clientY || 0) + offset.y });
+        const keyLabel = type === 'keydown' ? keyboardLabel(event) : undefined;
+        send({ type, ...(keyLabel ? { keyLabel } : {}), at: Date.now(), x: type === 'click' ? (rect?.x || 0) + (rect?.width || 0) / 2 + offset.x : (event.clientX || 0) + offset.x, y: type === 'click' ? (rect?.y || 0) + (rect?.height || 0) / 2 + offset.y : (event.clientY || 0) + offset.y });
       }, { capture: true, passive: true, signal: listeners.signal });
     }
   }

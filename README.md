@@ -150,6 +150,14 @@ The optional `src/mcp.js` stdio adapter remains for compatibility and developmen
 
 Official documentation: [Codex MCP configuration and server instructions](https://learn.chatgpt.com/docs/extend/mcp?surface=cli), [macOS LaunchAgents](https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/CreatingLaunchdJobs.html).
 
+## Keyboard event badges
+
+Recordings automatically show action keys and shortcuts as an ordered “Recent keys” badge, for example **Tab → Enter → Tab**. Ordinary letters, digits, text-entry spaces, IME composition, and modifier-only presses are omitted. Consecutive repeats collapse to **Tab ×3**; separated repeats retain their order. Event metadata contains the shortcut label, never ordinary typed characters, input values, or clipboard contents.
+
+Keys within 0.8 seconds form a burst. The badge appears after that burst’s last key, so it never announces an action before it happens. Each sequence stays visible for at least 1.5 seconds. Long sequences wrap and paginate in order; queued badges are summaries of recent keys, not a claim that every key occurs at display time. Idle trimming keeps keyboard context. If recording ends before badges finish, export briefly holds the final frame so no queued badge is lost. Very small crops use a readable footer instead of squeezing text into the content. The manifest records badge timing and any extra tail time; the original WebM stays unchanged.
+
+This works only for keyboard events delivered to the page. Browser/OS-reserved shortcuts and keys inside inaccessible cross-origin frames may not be observed. No extra tool call or typing delay is needed.
+
 ## Readable keyboard reproductions
 
 Explore quickly, then record a deliberate replay of a confirmed bug. Break a meaningful keyboard sequence into separate actions: type the text, observe the state, add a callout if viewers need to inspect it, then press Ctrl-Z and observe/highlight the result. Labels should explain the action and outcome. Callouts provide reading time in the exported video; the agent does not wait for that duration.
@@ -249,3 +257,7 @@ Live Chrome validation confirmed a 3456 × 2234 source stream contained a 1672 �
 ### Exported reading pauses (0.8.1)
 
 Validated in Chrome on 2026-11-05: publish, capture a labelled result frame, then reset. Saving the callout returned in 1.06 seconds, without waiting for its three-second hold. The exported 8.87-second MP4 contains the annotation from 3.00–6.00 seconds and preserves the following reset click. The source recording was 28.56 seconds; idle gaps were trimmed independently of the inserted hold. Exported frames and the playback manifest were inspected. All 54 tests and lint pass, including real encoding checks that retain following source frames and leave the original WebM byte-for-byte unchanged.
+
+### Keyboard badges (0.9.0)
+
+Validated in Chrome on 2026-11-05: Tab → Enter → Tab arrived within 12 milliseconds and remained in order in the exported badge for 1.53 seconds. Three subsequent Tab events appeared as Tab ×3 for another 1.53 seconds. The 970 × 418 panel recording trimmed from 60 seconds to 5.87 seconds, preserving both sequences. Exported frames and the manifest were inspected. All 63 tests and lint pass, including shortcut filtering, ordered bursts, repeated keys, pagination, tiny crops, timing after inserted callouts, and final-frame extension when queued badges outlast the source.
