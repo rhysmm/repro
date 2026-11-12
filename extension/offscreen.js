@@ -47,7 +47,9 @@ async function command(name, args = {}) {
       sessions.remove(entry.sessionId);
       return { sessionId: entry.sessionId, released: true };
     }
-    return entry.recorder.command(name, args);
+    const result = await entry.recorder.command(name, args);
+    if (['start', 'screenshot', 'callout'].includes(name)) await background('captureReady', { sessionId: entry.sessionId, recording: entry.recorder.status().recording });
+    return result;
   });
 }
 function connect() {

@@ -83,6 +83,8 @@ Screenshot highlights accept `style: "box"` (default) or `"arrow"`. Use a crop w
 
 ## Approval and session lifetime
 
+The toolbar badge reflects whether capture is enabled. A bad crop or annotation target is reported to the agent without changing an enabled tab to `ERR`. A successful capture clears any stale error. `ERR` is reserved for failures to enable capture, such as a permission failure; a new successful approval restores `ON`.
+
 The requested tab is focused and displays an approval banner. A single click on its pinned REC icon authorizes capture. Approvals are queued, with a two-minute deadline starting when each request is presented. “Not now” declines it. Agents must call `capture_wait` immediately and proceed on its result; never require a second chat confirmation. After a full 50-second wait still pending, a brief non-blocking reminder is appropriate.
 
 Approved streams remain available between clips without continuously recording to disk. Reloading the extension, closing the tab, or restarting Chrome ends them. A service restart normally preserves Chrome streams, but an interrupted command may already have executed: check session status before retrying. The optional `approval: "picker"` flow requires Chrome’s tab picker and may need macOS screen-recording permission.

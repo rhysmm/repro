@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Repro",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "description": "Local cropped evidence capture alongside your existing browser agent.",
   "minimum_chrome_version": "116",
   "permissions": [
@@ -21,7 +21,7 @@
     "type": "module"
   },
   "action": {
-    "default_title": "Repro — enable capture for this tab",
+    "default_title": "Repro \u2014 enable capture for this tab",
     "default_icon": {
       "16": "icons/icon-16.png",
       "32": "icons/icon-32.png",

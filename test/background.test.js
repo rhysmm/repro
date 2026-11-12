@@ -4,6 +4,8 @@ const listeners = {};
 const event = name => ({ addListener: fn => { listeners[name] = fn; } });
 const stored = {};
 const focused = [], forwarded = [], starts = [], effects = [], badges = new Map();
+let startError, enableError;
+const titles = new Map();
 const tabs = new Map([[1, { id: 1, windowId: 1, active: false, url: 'https://example.com/a' }], [2, { id: 2, windowId: 1, active: true, url: 'https://example.com/b' }]]);
 globalThis.chrome = {
   runtime: {
@@ -12,7 +14,8 @@ globalThis.chrome = {
     sendMessage: async message => {
       forwarded.push(message);
       switch (message.type) {
-        case 'approvedStart': starts.push(message.sessionId); return { recording: true };
+        case 'approvedStart': starts.push(message.sessionId); return startError ? { error: startError } : { recording: true };
+        case 'enable': return enableError ? { error: enableError } : {};
         default: return {};
       }
     },
@@ -24,7 +27,7 @@ globalThis.chrome = {
     sendMessage: async id => ({ tabId: id }), onActivated: event('activated'), onUpdated: event('updated'), onRemoved: event('removed'),
   },
   windows: { update: async () => {}, onRemoved: event('windowRemoved') },
-  action: { onClicked: event('clicked'), setBadgeText: async ({ tabId, text }) => badges.set(tabId, text), setBadgeBackgroundColor: async () => {}, setTitle: async () => {} },
+  action: { onClicked: event('clicked'), setBadgeText: async ({ tabId, text }) => badges.set(tabId, text), setBadgeBackgroundColor: async () => {}, setTitle: async ({ tabId, title }) => titles.set(tabId, title) },
   scripting: { executeScript: async options => {
     effects.push({ type: options.func?.name || 'inject', tabId: options.target.tabId, visible: options.args?.[1] });
     return [{ result: { shown: options.args?.[1] === true } }];
@@ -115,4 +118,41 @@ test('expiry and navigation remove pending banners and reload restores a current
   assert.equal((await send('approvalStatus', { sessionId: 'navigate' })).state, 'failed');
   assert.deepEqual(effects.at(-1), { type: 'updateApprovalBanner', tabId: 1, visible: false });
   await send('released', { sessionId: 'navigate' });
+});
+
+test('a failed first crop keeps the approved tab ON and recovery clears the stale error', async t => {
+  t.after(() => { startError = undefined; });
+  startError = 'Target did not match any visible element.';
+  await send('requestCapture', { sessionId: 'bad-crop', tabId: 1, url: tabs.get(1).url, approval: 'toolbar' });
+  await send('requestCapture', { sessionId: 'next-tab', tabId: 2, url: tabs.get(2).url, approval: 'toolbar' });
+  await assert.rejects(listeners.clicked(tabs.get(1)), /Target did not match/);
+  assert.equal(badges.get(1), 'ON');
+  assert.equal(badges.get(2), 'REC?');
+  assert.equal((await send('approvalStatus', { sessionId: 'bad-crop' })).error, startError);
+  assert.deepEqual(await send('resolve', { sessionId: 'bad-crop' }), { tabId: 1, tabActive: false });
+  // Also repairs ERR badges left by an older extension version.
+  badges.set(1, 'ERR');
+  await send('captureReady', { sessionId: 'bad-crop', recording: true });
+  assert.equal(badges.get(1), 'ON');
+  assert.equal(titles.get(1), 'Evidence capture enabled for this tab');
+  assert.equal((await send('approvalStatus', { sessionId: 'bad-crop' })).error, undefined);
+  assert.equal((await send('approvalStatus', { sessionId: 'bad-crop' })).state, 'recording');
+  assert.equal(badges.get(2), 'REC?');
+  await send('released', { sessionId: 'bad-crop' });
+  await send('released', { sessionId: 'next-tab' });
+});
+test('a capture permission failure still shows ERR until a new approval succeeds', async t => {
+  t.after(() => { enableError = undefined; });
+  enableError = 'Tab capture permission was denied.';
+  await send('requestCapture', { sessionId: 'blocked', tabId: 1, url: tabs.get(1).url, approval: 'toolbar' });
+  await assert.rejects(listeners.clicked(tabs.get(1)), /permission was denied/);
+  assert.equal(badges.get(1), 'ERR');
+  await assert.rejects(send('captureReady', { sessionId: 'blocked', recording: true }), /not enabled/);
+  assert.equal(badges.get(1), 'ERR');
+  enableError = undefined;
+  await send('requestCapture', { sessionId: 'blocked', tabId: 1, url: tabs.get(1).url, approval: 'toolbar' });
+  await listeners.clicked(tabs.get(1));
+  assert.equal(badges.get(1), 'ON');
+  assert.equal((await send('approvalStatus', { sessionId: 'blocked' })).error, undefined);
+  await send('released', { sessionId: 'blocked' });
 });

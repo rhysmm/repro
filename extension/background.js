@@ -101,8 +101,9 @@ async function approve(request, target) {
     return { state: 'recording' };
   } catch (error) {
     await transact(async queue => {
-      Object.assign(queue.get(request.sessionId), { state: 'failed', error: error.message });
-      await badge(target.id, 'ERR', error.message);
+      const current = queue.get(request.sessionId);
+      Object.assign(current, { state: 'failed', error: error.message });
+      await badge(target.id, current.enabled ? 'ON' : 'ERR', error.message);
       await advance(queue);
     });
     throw error;
@@ -119,7 +120,7 @@ chrome.action.onClicked.addListener(tab => {
     });
     if (request) await approve(request, tab);
   };
-  run().catch(async error => {
+  return run().catch(async error => {
     await chrome.action.setTitle({ tabId: tab.id, title: error.message });
     throw error;
   });
@@ -201,6 +202,14 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       queue.add({ requestId: crypto.randomUUID(), sessionId: options.sessionId, approval: options.approval, origin, tabId: options.tabId, url: options.url, options });
       await advance(queue);
       return { ...queue.status(options.sessionId), message: 'The page banner and REC? icon request the user’s toolbar approval. Immediately call capture_wait with sessionId, requestId and seconds:50. Do not ask the user for a chat reply or another confirmation. Chrome signals approval through capture_wait; continue when recording is true. Only after a full wait still awaiting approval, optionally give a non-blocking reminder and wait again.' };
+    });
+    if (message.type === 'captureReady') return transact(async queue => {
+      const request = queue.get(message.options.sessionId);
+      if (!request.enabled) throw new Error('This session is not enabled.');
+      request.state = message.options.recording ? 'recording' : 'approved';
+      delete request.error;
+      await badge(request.tabId, 'ON', 'Evidence capture enabled for this tab');
+      return { enabled: true };
     });
     if (message.type === 'approvalStatus') return transact(async queue => {
       await advance(queue);
