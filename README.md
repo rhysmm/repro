@@ -56,3 +56,7 @@ Ask your agent, for example:
 The agent selects the tab and requests capture. When the banner appears, click the pinned **REC?** extension icon once. The agent continues automatically—no chat reply needed. That tab stays approved for later clips and screenshots; it isn’t recording between clips.
 
 [Updates, troubleshooting, limitations, and developer reference](docs/reference.md)
+
+## License
+
+[MIT](LICENSE). Third-party dependencies retain their own licenses.
