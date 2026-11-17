@@ -1,3 +1,4 @@
+import { beginCursorProbe } from './cursor-probe.js';
 import { prepareCallout } from './callout.js';
 import { sourceCrop, frameContentRect } from './frame-geometry.js';
 import { layoutAnnotations, drawAnnotations } from './annotations.js';
@@ -87,14 +88,34 @@ async function command(name, args = {}) {
   const mimeType = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8'].find(type => MediaRecorder.isTypeSupported(type));
   if (!mimeType) throw new Error('WebM recording is unavailable in this browser.');
   const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 2500000 });
-  const state = { canvas, ctx, stream, recorder, chunks: [], started: Date.now(), geometry, args, events: [], samples: [], callouts: [], previous: null, nextSample: 0, warnings: [...warnings] };
+  const animateCursor = args.animateCursor && !args.cursorOverlayProbe && !args.cursorProbe;
+  const cursorSuppression = (args.cursorOverlayProbe || animateCursor) ? await background('cursorControl', { operation: 'start', probePositions: args.cursorOverlayProbe === true, trackPositions: animateCursor }) : undefined;
+  if (cursorSuppression?.verified) await new Promise(resolve => setTimeout(resolve, 200));
+  let cursorProbe;
+  try {
+    cursorProbe = args.cursorProbe ? await beginCursorProbe(media.getVideoTracks()[0], navigator.mediaDevices.getSupportedConstraints()) : undefined;
+    cropFrame(ctx, geometry);
+  } catch (error) {
+    stream.getTracks().forEach(track => track.stop());
+    await cursorProbe?.restore();
+    if (cursorSuppression) await background('cursorControl', { operation: 'stop' });
+    throw error;
+  }
+  const state = { cursorSuppression, cursorProbe, pointerSamples: [], canvas, ctx, stream, recorder, chunks: [], started: Date.now(), geometry, args, events: [], samples: [], callouts: [], previous: null, nextSample: 0, warnings: [...warnings] };
   recording = state;
   recorder.ondataavailable = event => { if (event.data.size) state.chunks.push(event.data); };
   state.done = new Promise((resolve, reject) => {
     recorder.onstop = resolve;
     recorder.onerror = event => reject(event.error || new Error('MediaRecorder failed'));
   });
-  recorder.start(1000);
+  try { recorder.start(1000); }
+  catch (error) {
+    recording = null;
+    stream.getTracks().forEach(track => track.stop());
+    await state.cursorProbe?.restore();
+    if (cursorSuppression) await background('cursorControl', { operation: 'stop' });
+    throw error;
+  }
   state.timer = setInterval(() => {
     const t = (Date.now() - state.started) / 1000;
     cropFrame(ctx, geometry);
@@ -104,7 +125,7 @@ async function command(name, args = {}) {
       state.samples.push({ t, changed: visualChange(state.previous, current) });
       state.previous = current; state.nextSample = t + 0.2;
     }
-    for (const event of state.events) {
+    for (const event of animateCursor && state.cursorSuppression?.safeForAnimation ? state.events.filter(event => event.type === 'click') : state.events) {
       if (!['pointerdown', 'click'].includes(event.type) || t - event.t < 0 || t - event.t > 0.45) continue;
       const x = (event.x - geometry.region.x) * canvas.width / geometry.region.width;
       const y = (event.y - geometry.region.y) * canvas.height / geometry.region.height;
@@ -113,10 +134,10 @@ async function command(name, args = {}) {
       ctx.beginPath(); ctx.arc(x, y, 22 + (t - event.t) * 18, 0, Math.PI * 2); ctx.stroke();
       ctx.globalAlpha = 1;
     }
-    if (state.pointer && needsPointerOverlay(source, active)) drawPointer(ctx, state.pointer, geometry);
+    if (!state.cursorSuppression && !state.cursorProbe && state.pointer && needsPointerOverlay(source, active)) drawPointer(ctx, state.pointer, geometry);
   }, 1000 / 15);
   state.limit = setTimeout(() => finish().catch(error => { warnings.push(error.message); throw error; }), args.maxSeconds * 1000);
-  return { sessionId, recording: true, region: geometry.region, viewport: geometry.viewport, maxSeconds: args.maxSeconds, preserveTiming: args.preserveTiming };
+  return { sessionId, recording: true, region: geometry.region, viewport: geometry.viewport, maxSeconds: args.maxSeconds, preserveTiming: args.preserveTiming, cursorProbe: cursorProbe?.report, cursorSuppression };
 }
 async function finish() {
   const state = recording;
@@ -127,17 +148,29 @@ async function finish() {
   await state.done;
   if (recording !== state) return;
   state.stream.getTracks().forEach(track => track.stop());
-  completed = { blob: new Blob(state.chunks, { type: state.recorder.mimeType }), metadata: { geometry: state.geometry, duration: (Date.now() - state.started) / 1000, events: state.events, samples: state.samples, callouts: state.callouts, preserveTiming: state.args.preserveTiming, pointerRendering: source === 'display' ? 'reconstructed-from-page-events' : 'native-with-background-fallback', warnings: state.warnings } };
+  await state.cursorProbe?.restore();
+  if (state.cursorSuppression) {
+    try { state.cursorSuppression = await background('cursorControl', { operation: 'stop' }); }
+    catch (error) {
+      if (!/Receiving end does not exist|Could not establish connection|No tab with id/.test(error.message)) throw error;
+      state.cursorSuppression = { requested: true, safeForAnimation: false, lost: true, error: error.message };
+    }
+    if (!state.cursorSuppression.safeForAnimation) state.warnings.push('Cursor suppression could not be verified throughout this clip; do not add an animated pointer.');
+  }
+  completed = { blob: new Blob(state.chunks, { type: state.recorder.mimeType }), metadata: { captureStartedAt: state.started, animateCursor: state.args.animateCursor === true && !state.args.cursorOverlayProbe && !state.args.cursorProbe, cursorSuppression: state.cursorSuppression, cursorProbe: state.cursorProbe?.report, pointerSamples: state.cursorProbe || state.cursorSuppression ? state.pointerSamples : undefined, geometry: state.geometry, duration: (Date.now() - state.started) / 1000, events: state.events, samples: state.samples, callouts: state.callouts, preserveTiming: state.args.preserveTiming, pointerRendering: state.args.animateCursor && state.cursorSuppression?.safeForAnimation ? 'simulated-at-export' : state.cursorSuppression ? 'source-only-overlay-suppression-probe' : state.cursorProbe ? 'source-only-cursor-suppression-probe' : source === 'display' ? 'reconstructed-from-page-events' : 'native-with-background-fallback', warnings: state.warnings } };
   recording = null;
 }
 
 async function receive(message) {
-    if (message.type === 'tabActivity') { active = message.active; return; }
+    if (message.type === 'tabActivity') { active = message.active; if (recording?.cursorSuppression) recording.events.push({ type: 'tabActivity', active, t: (Date.now() - recording.started) / 1000 }); return; }
     if (message.type === 'event') {
       if (recording) {
         const event = { ...message.event, t: (message.event.at - recording.started) / 1000 };
-        if (['pointermove', 'pointerdown', 'click'].includes(event.type)) recording.pointer = event;
-        if (event.type === 'pointermove') return;
+        if (['pointermove', 'pointerdown', 'pointerup'].includes(event.type)) {
+          recording.pointer = event;
+          if (recording.cursorProbe || recording.cursorSuppression) recording.pointerSamples.push({ t: event.t, x: event.x, y: event.y, type: event.type, buttons: event.buttons, tabActive: active });
+        }
+        if (['pointermove', 'pointerup'].includes(event.type)) return;
         const last = recording.events.at(-1);
         if (event.type !== 'scroll' || !last || event.t - last.t > 0.15) recording.events.push(event);
       }

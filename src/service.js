@@ -52,7 +52,7 @@ const server = http.createServer(async (request, response) => {
     const url = new URL(request.url, `http://127.0.0.1:${settings.port}`);
     if (request.headers.host !== `127.0.0.1:${server.address().port}`) return reply(response, 403, { error: 'Invalid host.' });
     if (url.pathname === '/demo' && request.method === 'GET') {
-      response.writeHead(200, { 'Content-Type': 'text/html' }); response.end(await readFile(path.join(root, 'demo/index.html'))); return;
+      response.writeHead(200, { 'Content-Type': 'text/html' }); response.end(await readFile(path.join(root, url.searchParams.has('cursor') ? 'demo/cursor.html' : url.searchParams.has('composer') ? 'demo/composer.html' : 'demo/index.html'))); return;
     }
     if (!authorized(request)) return reply(response, 401, { error: 'Unauthorized.' });
     if (request.headers.origin && !request.headers.origin.startsWith('chrome-extension://')) return reply(response, 403, { error: 'Browser page requests are not accepted.' });

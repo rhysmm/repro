@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Repro — recipient composer</title>
+<style>
+*{box-sizing:border-box}body{margin:0;padding:24px;background:#eef1f5;color:#20283a;font:14px system-ui,sans-serif}main{max-width:1040px;margin:auto;background:white;border:1px solid #d9dfeb;border-radius:12px;overflow:hidden}header{padding:20px 24px;border-bottom:1px solid #e5e9ef;display:flex;justify-content:space-between;align-items:center}h1{font-size:21px;margin:0 0 5px}p{margin:0;color:#647084;line-height:1.5}button,input,textarea,select{font:inherit}button{cursor:pointer;border:1px solid #c8d1df;border-radius:6px;padding:9px 13px;background:white;color:inherit}button:hover{background:#eef3ff}button:disabled{opacity:.6;cursor:wait}.grid{display:grid;grid-template-columns:220px 1fr 300px;min-height:480px}.recipients{padding:20px 14px;border-right:1px solid #e5e9ef}.recipients button{display:block;width:100%;text-align:left;margin:10px 0;padding:12px}.recipients button[aria-pressed=true]{background:#edf2ff;border-color:#526edb}.muted,small{color:#647084;font-size:12px}strong{display:block;margin-bottom:4px}h2{font-size:14px;margin:0 0 16px}section.editor{padding:20px 24px}label{display:block;margin:0 0 7px;font-weight:600;font-size:13px}input:not([type=checkbox]),textarea,select{width:100%;border:1px solid #bcc7d7;border-radius:5px;padding:9px 10px;background:white;color:inherit}input:focus,textarea:focus,select:focus{outline:2px solid #8eabff;outline-offset:1px}.row{display:grid;grid-template-columns:1fr 1fr;gap:16px}.field{margin-bottom:17px}textarea{resize:vertical;min-height:66px}.notice{background:#fff3d5;border:1px solid #f0d588;color:#76551d;padding:10px;border-radius:5px;margin:12px 0 17px}.notice[hidden]{display:none}.primary{background:#3856c7;color:white;border-color:#3856c7}.primary:hover{background:#2d46a7}.status{min-height:22px;margin:10px 0 0;font-size:12px}.preview{background:#f8fafc;border-left:1px solid #e5e9ef;padding:20px}.email{border:1px solid #dce3ec;background:white;border-radius:8px;padding:18px;margin:18px 0}.email p{color:#20283a;margin:15px 0}.saved{margin-top:18px;border-top:1px solid #dce3ec;padding-top:14px}.check{display:flex;align-items:center;gap:7px;font-weight:400}footer{padding:12px 24px;border-top:1px solid #e5e9ef;color:#647084;font-size:12px}@media(max-width:850px){.grid{grid-template-columns:170px 1fr 230px}section.editor{padding:20px 16px}.row{gap:10px}}
+</style>
+</head>
+<body><main data-testid="composer">
+<header><div><h1>Recipient composer</h1><p>Personalize a message and edit the selected recipient’s saved profile.</p></div><button id="reset">Reset demo</button></header>
+<div class="grid">
+<nav class="recipients" aria-label="Recipients"><h2>Recipients · 2</h2><button data-recipient="0" aria-pressed="true"><strong>Alex Rivera</strong><small>alex@example.test</small></button><button data-recipient="1" aria-pressed="false"><strong id="lee-name">(No first name) Lee</strong><small>lee@example.test</small></button></nav>
+<section class="editor" aria-label="Message and profile">
+<div class="field"><label for="fallback">First-name fallback</label><input id="fallback" autocomplete="off" placeholder="Used when first name is missing"></div>
+<div class="notice" id="warning">One recipient has no first name. Add a fallback to complete their greeting.</div>
+<div class="row"><div class="field"><label for="first">First name</label><input id="first" autocomplete="off"></div><div class="field"><label for="last">Last name</label><input id="last" autocomplete="off"></div></div>
+<div class="row"><div class="field"><label for="tone">Message tone</label><select id="tone"><option>Friendly</option><option>Formal</option></select></div><div class="field"><label for="subject">Subject</label><input id="subject" value="A collaboration idea" autocomplete="off"></div></div>
+<div class="field"><label for="message">Message</label><textarea id="message">We’d love to work with you on our next campaign.</textarea></div>
+<label class="check"><input type="checkbox" id="phone">Include contact number</label>
+<button class="primary" id="save">Save recipient</button><p class="status" role="status" id="status">All profile changes saved.</p>
+</section>
+<aside class="preview" aria-label="Message preview"><h2>Message preview</h2><p class="muted">Uses the saved recipient profile.</p><div class="email"><small id="preview-subject"></small><p id="greeting"></p><p id="preview-message"></p><small id="preview-phone" hidden>Contact us: 555-0100</small></div><div class="saved"><label>Saved profile</label><p id="saved-name"></p><p id="saved-email" class="muted"></p></div></aside>
+</div><footer>Local test fixture. Nothing is sent. Draft profile edits affect the preview only after Save recipient.</footer>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+let recipients, selected=0, saving=false;
+function renderPreview(){const person=recipients[selected];$('greeting').textContent=`${$('tone').value==='Formal'?'Dear':'Hi'} ${person.first||$('fallback').value||'{{first_name}}'} ${person.last},`;$('preview-subject').textContent=$('subject').value;$('preview-message').textContent=$('message').value;$('preview-phone').hidden=!$('phone').checked;$('saved-name').textContent=`${person.first||'(No first name)'} ${person.last}`;$('saved-email').textContent=person.email;$('warning').hidden=Boolean($('fallback').value)||recipients.every(p=>p.first);}
+function selectRecipient(index){selected=index;const person=recipients[index];$('first').value=person.first;$('last').value=person.last;$('status').textContent='All profile changes saved.';document.querySelectorAll('[data-recipient]').forEach(button=>button.setAttribute('aria-pressed',String(Number(button.dataset.recipient)===index)));renderPreview();}
+function reset(){recipients=[{first:'Alex',last:'Rivera',email:'alex@example.test'},{first:'',last:'Lee',email:'lee@example.test'}];$('fallback').value='';$('tone').value='Friendly';$('subject').value='A collaboration idea';$('message').value='We’d love to work with you on our next campaign.';$('phone').checked=false;$('lee-name').textContent='(No first name) Lee';selectRecipient(0);}
+document.querySelectorAll('[data-recipient]').forEach(button=>button.addEventListener('click',()=>selectRecipient(Number(button.dataset.recipient))));
+['fallback','subject','message'].forEach(id=>$(id).addEventListener('input',renderPreview));['tone','phone'].forEach(id=>$(id).addEventListener('change',renderPreview));['first','last'].forEach(id=>$(id).addEventListener('input',()=>{$('status').textContent='Unsaved profile changes. Preview still uses saved values.';}));
+$('save').addEventListener('click',async()=>{if(saving)return;saving=true;const index=selected,draft={first:$('first').value,last:$('last').value};$('save').disabled=true;$('status').textContent='Saving…';await new Promise(resolve=>setTimeout(resolve,500));Object.assign(recipients[index],draft);$('lee-name').textContent=`${recipients[1].first||'(No first name)'} ${recipients[1].last}`;$('save').disabled=false;saving=false;$('status').textContent='Recipient saved. Preview updated.';renderPreview();});
+$('reset').addEventListener('click',reset);reset();
+</script></body></html>

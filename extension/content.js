@@ -4,6 +4,8 @@
   const state = { active: true, dispose: () => { state.active = false; listeners.abort(); observer.disconnect(); } };
   globalThis.__reproInstalled = state;
   const observed = new WeakSet();
+  const fields = new WeakMap();
+  let nextField = 0;
   const send = async event => {
     if (!state.active) return;
     try { await chrome.runtime.sendMessage({ destination: 'background', type: 'event', event }); }
@@ -34,19 +36,33 @@
     }
     return result;
   }
+  function fieldDetail(element, offset) {
+    const field = element?.closest?.('input,textarea,[contenteditable=""],[contenteditable="true"]');
+    if (!field || field.tagName === 'INPUT' && !['text', 'search', 'email', 'url', 'tel', 'number', ''].includes(field.type)) return undefined;
+    const rect = field.getBoundingClientRect();
+    if (!rect.width || !rect.height) return undefined;
+    if (!fields.has(field)) fields.set(field, ++nextField);
+    return { id: fields.get(field), rect: { x: rect.x + offset.x, y: rect.y + offset.y, width: rect.width, height: rect.height } };
+  }
   function observe() {
     for (const { doc } of documents()) {
       if (observed.has(doc)) continue;
       observed.add(doc);
       let lastPointerMove = 0;
-      for (const type of ['pointermove', 'pointerdown', 'click', 'keydown', 'scroll', 'input']) doc.addEventListener(type, event => {
+      for (const type of ['pointermove', 'pointerdown', 'pointerup', 'click', 'keydown', 'scroll', 'focusin', 'beforeinput', 'paste', 'input']) doc.addEventListener(type, event => {
         if (type === 'click' && event.detail !== 0) return;
         if (type === 'pointermove' && Date.now() - lastPointerMove < 33) return;
         if (type === 'pointermove') lastPointerMove = Date.now();
         const offset = documents().find(entry => entry.doc === doc)?.offset || { x: 0, y: 0 };
         const rect = event.target?.getBoundingClientRect?.();
+        const element = event.composedPath?.()[0] || event.target;
+        const field = fieldDetail(element, offset);
         const keyLabel = type === 'keydown' ? keyboardLabel(event) : undefined;
-        send({ type, ...(keyLabel ? { keyLabel } : {}), at: Date.now(), x: type === 'click' ? (rect?.x || 0) + (rect?.width || 0) / 2 + offset.x : (event.clientX || 0) + offset.x, y: type === 'click' ? (rect?.y || 0) + (rect?.height || 0) / 2 + offset.y : (event.clientY || 0) + offset.y });
+        send({ type, ...(['pointermove', 'pointerdown', 'pointerup'].includes(type) ? { buttons: event.buttons } : {}), ...(field ? { field } : {}), ...(keyLabel ? { keyLabel } : {}), at: Date.now(), x: type === 'click' ? (rect?.x || 0) + (rect?.width || 0) / 2 + offset.x : (event.clientX || 0) + offset.x, y: type === 'click' ? (rect?.y || 0) + (rect?.height || 0) / 2 + offset.y : (event.clientY || 0) + offset.y });
+        if (type === 'input' && field) requestAnimationFrame(() => {
+          const updated = fieldDetail(element, documents().find(entry => entry.doc === doc)?.offset || offset);
+          if (updated) send({ type: 'editlayout', field: updated, at: Date.now() });
+        });
       }, { capture: true, passive: true, signal: listeners.signal });
     }
   }

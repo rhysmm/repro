@@ -1,11 +1,15 @@
 export const frameRate = 15;
 
-export function planPlayback(timeline, callouts, duration) {
+export function planPlayback(timeline, callouts, duration, holds = [], cursorHolds = []) {
   const totalFrames = Math.ceil(duration * frameRate);
   const points = callouts.map((callout, index) => {
     if (!Number.isFinite(callout.at) || callout.at < 0 || !Number.isFinite(callout.holdSeconds) || callout.holdSeconds < 1 || callout.holdSeconds > 10) throw new Error('Invalid callout timing.');
-    return { index, frame: Math.min(totalFrames, Math.round(callout.at * frameRate)), frames: Math.ceil(callout.holdSeconds * frameRate) };
-  }).sort((a, b) => a.frame - b.frame || a.index - b.index);
+    return { type: 'callout', index, frame: Math.min(totalFrames, Math.round(callout.at * frameRate)), frames: Math.ceil(callout.holdSeconds * frameRate) };
+  });
+  points.push(...holds.map((hold, index) => ({ type: 'autoHold', index, sourceFrame: hold.sourceFrame, frame: hold.sourceFrame + 1, frames: Math.ceil(hold.holdSeconds * frameRate) })));
+  points.push(...cursorHolds.map((hold, index) => ({ type: 'cursorHold', index, sourceFrame: hold.sourceFrame, frame: hold.frame, frames: Math.ceil(hold.holdSeconds * frameRate) })));
+  const priority = { cursorHold: 0, autoHold: 1, callout: 2 };
+  points.sort((a, b) => a.frame - b.frame || priority[a.type] - priority[b.type] || a.index - b.index);
   const segments = []; let outputFrame = 0;
   const append = segment => {
     if (segment.frames <= 0) return;
@@ -20,7 +24,9 @@ export function planPlayback(timeline, callouts, duration) {
       const point = points[pointIndex++];
       const frame = Math.max(cursor, point.frame);
       append({ type: 'video', startFrame: cursor, endFrame: frame, frames: frame - cursor });
-      append({ type: 'callout', calloutIndex: point.index, sourceTime: point.frame / frameRate, frames: point.frames });
+      append(point.type === 'callout'
+        ? { type: 'callout', calloutIndex: point.index, sourceTime: point.frame / frameRate, frames: point.frames }
+        : { type: point.type, holdIndex: point.index, sourceFrame: point.sourceFrame, frames: point.frames });
       cursor = frame;
     }
     append({ type: 'video', startFrame: cursor, endFrame: end, frames: end - cursor });

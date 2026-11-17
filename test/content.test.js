@@ -66,3 +66,32 @@ test('space is shown for button activation but not ordinary editable text or Alt
   await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(messages.map(message => message.keyLabel), [undefined, 'Space', undefined]);
 });
+test('editing events contain stable field identity and changing geometry without typed text', async () => {
+  const messages = [];
+  const { document, context } = page(async message => { messages.push(message.event); });
+  context.requestAnimationFrame = callback => callback();
+  let y = 40;
+  const element = { tagName: 'INPUT', type: 'text', value: 'private typed text', getBoundingClientRect: () => ({ x: 20, y, width: 100, height: 30 }) };
+  element.closest = () => element;
+  const event = type => Object.assign(new Event(type), { data: 'secret', composedPath: () => [element] });
+  document.dispatchEvent(event('beforeinput'));
+  y = 20;
+  document.dispatchEvent(event('input'));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(messages.map(e => e.type), ['beforeinput', 'input', 'editlayout']);
+  assert.deepEqual(messages.map(e => e.field.id), [1, 1, 1]);
+  assert.deepEqual(messages.map(e => e.field.rect.y), [40, 20, 20]);
+  assert.ok(!JSON.stringify(messages).includes('secret'));
+  assert.ok(!JSON.stringify(messages).includes('private typed text'));
+  element.type = 'password';
+  document.dispatchEvent(event('input'));
+  assert.equal(messages.at(-1).field, undefined);
+});
+test('pointer capture retains button state and releases for distinguishing dragging', async () => {
+  const messages = [];
+  const { document } = page(async message => { messages.push(message.event); });
+  document.dispatchEvent(Object.assign(new Event('pointerdown'), { clientX: 12, clientY: 34, buttons: 1 }));
+  document.dispatchEvent(Object.assign(new Event('pointerup'), { clientX: 56, clientY: 78, buttons: 0 }));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(messages.map(e => [e.type, e.x, e.y, e.buttons]), [['pointerdown', 12, 34, 1], ['pointerup', 56, 78, 0]]);
+});

@@ -101,9 +101,19 @@ This works only for keyboard events delivered to the page. Browser/OS-reserved s
 
 Explore quickly, then record a deliberate replay of a confirmed bug. Break a meaningful keyboard sequence into separate actions: type the text, observe the state, add a callout if viewers need to inspect it, then press Ctrl-Z and observe/highlight the result. Labels should explain the action and outcome. Callouts provide reading time in the exported video; the agent does not wait for that duration.
 
-For autocomplete, validation, and animations, wait for the relevant visible state or use a brief targeted pause to capture the transition. Use `preserveTiming: true` when elapsed time or a deliberate idle pause matters, because trimming may shorten it. Avoid global per-keystroke delays. Timing-sensitive bugs must retain their triggering input cadence; explain their before/after states without changing the reproduction.
+For autocomplete, validation, and animations, wait for the relevant visible state or use a brief targeted pause to capture the transition. Use `preserveTiming: true` when elapsed time or a deliberate idle pause matters, because trimming may shorten it. For ordinary demonstrations, use the browser harness’s sequential key-entry operation (roughly 50–80 ms between characters when configurable) and await each field before continuing. Avoid instant fill or paste unless that input method is part of the reproduction. Timing-sensitive bugs must retain their triggering input cadence; explain their before/after states without changing the reproduction.
 
 This guidance is supplied in server instructions, the recording tool description, and successful start/approval responses so existing chats with cached tool descriptions also receive it.
+
+## Automatic editing cues
+
+Edited text fields receive a red outline and an “Editing” label in the exported MP4. The extension observes input events and field rectangles without intercepting input or storing typed values in event metadata. Rectangles follow layout changes immediately after an input event; fixed recording crops still do not follow the page.
+
+When captured footage moves quickly between edits, export adds just enough reading time to reach 0.5 seconds between fields, or 0.8 seconds after a selection before editing. Existing retained pauses and manual callouts count toward that minimum. An inserted hold shows “Next: edit” around the upcoming field and repeats an actual pre-edit frame. It never reconstructs an uncaptured application state. If there is no distinct frame between actions, export skips the hold and returns a warning. Observe the selected state before editing; use a callout when visibility of a particular state must be guaranteed.
+
+These are best-effort visual cues based on DOM events and a 15fps recording, not knowledge of the application’s state. They do not slow input, simulate characters, or guarantee that a frame contains a settled asynchronous response. `preserveTiming: true` disables automatic holds as well as idle trimming; field highlights remain. The manifest records editing bursts, inserted holds, overlay positions, and warnings. The original WebM remains unchanged.
+
+The recipient composer fixture is at `http://127.0.0.1:47321/demo?composer=1`. It includes recipient selection, a fallback field that changes layout, draft profile edits, a delayed save, and a preview based on saved values.
 
 ## Readable callouts during a recording
 
@@ -126,7 +136,13 @@ These are editorial freeze-frames, not application delays. `preserveTiming` pres
 
 ## Timing and evidence fidelity
 
-The recorder samples a downscaled clean crop five times per second. Changes above a small area/color threshold and actual page input events identify activity. It retains 0.6 seconds before and 0.7 seconds after interactions, and collapses idle gaps of at least 0.8 seconds between retained activity windows. Visual changes retain their own context. The initial 0.8 seconds and final 0.6 seconds remain. Small blinking carets generally do not retain an entire gap. The recording itself is 15fps; click rings and the pointer are composed into the output, not injected into the page. Click rings fade over 0.45 seconds. With the sharing-picker flow, the pointer is reconstructed from observed page input positions and remains at the last observed position between events; it is an evidence overlay, not a guaranteed reproduction of the OS cursor shape. Pointer movement alone does not add activity events to the trimming timeline. The direct toolbar flow uses Chrome’s native cursor on the active tab and reconstructs a pointer from page events for inactive tabs. The fallback follows tab activation changes; it holds the last observed position and does not reproduce every native cursor shape. Chrome may still supply its native cursor in the sharing-picker source stream.
+The recorder samples a downscaled clean crop five times per second. Changes above a small area/color threshold and page input identify activity. It retains 0.6 seconds before and 0.7 seconds after interactions, and collapses idle gaps of at least 0.8 seconds between retained activity windows. The initial 0.8 seconds and final 0.6 seconds remain. Small blinking carets generally do not retain a gap.
+
+`animateCursor` defaults to true. For the recognized Codex overlay, Repro hides only its cursor during capture, saves pointer events, then draws a reconstructed pointer at 30fps during export. Point-to-point moves use minimum-jerk easing (`10u³ − 15u⁴ + 6u⁵`), based on [Flash and Hogan (1985)](https://pubmed.ncbi.nlm.nih.gov/4020415/). The duration heuristic is an editorial choice: longer distances receive more travel time, capped at 0.65 seconds. Paths are direct; observed dragging retains its sampled path. This visualizes recorded inputs, not the physical mouse's exact motion.
+
+When inputs are too close together, export inserts frozen backdrop frames to allow movement and a brief arrival pause. Multiple clicks in one captured frame are replayed in order; their missing intermediate page states cannot be recovered. The manifest identifies these cases, synthesized cursor movements, click times, and `cursorHoldSeconds`. Click rings follow replayed arrivals. Source capture remains 15fps and the original WebM is unchanged. `preserveTiming:true` disables inserted travel time, so rapid movements may remain rapid. Callout and automatic reading holds keep the pointer still.
+
+Suppression is verified throughout the clip. Unknown cursor implementations remain untouched and receive no replacement pointer; background footage may consequently lack a cursor. If verification is lost mid-recording, animated export is skipped with a warning (earlier hidden cursors cannot be recovered). Internal Codex selectors may change. `animateCursor:false` retains the previous source-cursor/background-fallback behavior. Diagnostic `cursorProbe` and `cursorOverlayProbe` modes remain opt-in and do not animate.
 
 Timing information stays in the sidecar file rather than covering the video. `manifest.json` records the original-to-edited timeline, input timestamps, crop, and source URL. `original.webm` preserves the entire cropped recording. `preserveTiming: true` disables trimming for performance bugs or subtle visual changes. The heuristic cannot distinguish agent thinking from an application freeze; use the original and timestamps when timing is evidence. It does not remove all animations, spinners, or large repetitive changes.
 
@@ -157,3 +173,10 @@ npm run setup
 ```
 
 After rebuilding, reload the extension in Chrome, request capture approval again, and run `npm run service:restart` after server changes (or restart `npm start` for manual development). Tests exercise real FFmpeg encoding and the MCP handshake, along with timing, schemas, approval target checks, wrong-tab cleanup, native picker error propagation, FIFO approval/expiry/cancellation, per-session operation locks, tab ownership, and independent routing through the background worker. `http://127.0.0.1:47321/demo` provides a deterministic interactive fixture for browser validation.
+
+
+### Cursor input sources
+
+With verified Codex suppression, Repro uses the hidden overlay to confirm foreground page-pointer coordinates, then applies its own export animation. Physical mouse movements elsewhere on the page do not steer that cursor. In inactive tabs, it uses page events because Codex leaves its overlay position stale. The extension records tab activity with pointer samples; the manifest reports the selected source and ignored-event count. Approval and tab focus behavior are unchanged.
+
+Attribution uses the recognized 24px Codex overlay layout, a 3px coordinate tolerance, and up to 150ms of event-delivery skew. It is a visual filtering heuristic, not an input-security boundary: a physical click at the same position as the agent cannot reliably be distinguished. Physical input can still change the actual page and therefore the captured video. App switches and switching between Chrome windows were tested on macOS. Other harnesses remain unvalidated. Unknown cursor layouts disable reconstruction rather than use mixed foreground input. Existing captures without source telemetry retain their previous export behavior.

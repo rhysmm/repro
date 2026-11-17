@@ -9,7 +9,7 @@ async function offscreen(message) {
   return response;
 }
 async function inject(tabId) {
-  await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
+  await chrome.scripting.executeScript({ target: { tabId }, files: ['cursor-suppression.js', 'content.js'] });
 }
 async function ensureOffscreen() {
   if (creatingOffscreen) return creatingOffscreen;
@@ -186,6 +186,14 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       const request = captureRequests.find(r => r.tabId === sender.tab?.id && r.enabled);
       if (request) return offscreen({ type: 'event', sessionId: request.sessionId, event: message.event });
       return;
+    }
+    if (message.type === 'cursorControl') {
+      const { captureRequests = [] } = await chrome.storage.session.get('captureRequests');
+      const request = captureRequests.find(r => r.sessionId === message.options.sessionId && r.enabled);
+      if (!request) throw new Error('This session is not enabled.');
+      const result = await chrome.tabs.sendMessage(request.tabId, { type: 'cursorControl', operation: message.options.operation, probePositions: message.options.probePositions === true, trackPositions: message.options.trackPositions === true });
+      if (result.error) throw new Error(result.error);
+      return result;
     }
     if (message.type === 'resolve') {
       const { captureRequests = [] } = await chrome.storage.session.get('captureRequests');
