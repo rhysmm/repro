@@ -18,7 +18,7 @@
     if (!current.trackPositions) return;
     if (found.cursors.length !== 1) { current.positionsValid = false; return; }
     const cursor = found.cursors[0], style = getComputedStyle(cursor);
-    const match = /^translate3d\(([-\d.]+)px,\s*([-\d.]+)px,\s*0px\)/.exec(cursor.style.transform);
+    const match = /^translate3d\(([-\d.]+)px,\s*([-\d.]+)px,\s*0(?:px)?\s*\)/.exec(cursor.style.transform);
     const width = parseFloat(style.width), height = parseFloat(style.height);
     if (!match || width !== 24 || height !== 24 || style.left !== '0px' || style.top !== '0px') { current.positionsValid = false; return; }
     // Codex positions this 24px overlay around the input coordinate, not at its top-left.
@@ -38,7 +38,6 @@
     current.poses.push(entry);
   }
   function record(reason, found) {
-    recordPoints(found);
     recordPoses(found);
     const entry = { at: Date.now(), reason, visibility: document.visibilityState, host: Boolean(found.host), cursorCount: found.cursors.length, inlineOpacity: found.cursors.map(e => e.style.opacity), hidden: found.cursors.every(e => getComputedStyle(e).display === 'none') };
     const previous = current.observations.at(-1);
@@ -48,7 +47,16 @@
   function sync(reason) {
     if (!current) return;
     if (runtimeId && chrome.runtime.id !== runtimeId) { cleanup(); return; }
+    if (!current.positionsValid) return;
     const found = snapshot();
+    recordPoints(found);
+    if (!current.positionsValid) {
+      current.lost ||= current.verified;
+      current.verified = false;
+      stopWatching();
+      record('unreadable-position', found);
+      return;
+    }
     if (!found.root || !found.cursors.length) {
       current.verified = false;
       current.lost = true;
@@ -75,12 +83,18 @@
   function report() {
     return current ? { requested: true, supported: current.supported, verified: current.verified, safeForAnimation: current.supported && current.verified && !current.lost, lost: current.lost, rootCount: current.roots.size, observations: [...current.observations], ...(current.trackPositions ? { tracking: { source: 'codex-overlay', valid: current.positionsValid, points: [...current.points] } } : {}), ...(current.probePositions ? { poses: [...current.poses], posesTruncated: current.posesTruncated, initialLayout: current.initialLayout } : {}) } : { requested: false, safeForAnimation: false };
   }
-  function cleanup() {
-    if (!current) return;
+  function stopWatching() {
     current.observer?.disconnect();
     clearInterval(current.timer);
     document.removeEventListener('visibilitychange', current.visibilityListener);
-    for (const { style, observer } of current.roots.values()) { observer.disconnect(); style.remove(); }
+    for (const { style, observer } of current.roots.values()) {
+      observer.disconnect();
+      if (style.parentNode) style.remove();
+    }
+  }
+  function cleanup() {
+    if (!current) return;
+    stopWatching();
     current = undefined;
   }
   function stop() {
@@ -92,7 +106,7 @@
     stop();
     const found = snapshot();
     const supported = Boolean(found.root && found.cursors.length);
-    current = { supported, verified: false, lost: !supported, roots: new Map(), observations: [], probePositions, poses: [], posesTruncated: false, trackPositions, positionsValid: true, points: [] };
+    current = { supported, verified: false, lost: !supported, roots: new Map(), observations: [], probePositions, poses: [], posesTruncated: false, trackPositions, positionsValid: supported, points: [] };
     if (!supported) { record('unsupported', found); return report(); }
     if (probePositions) {
       current.initialLayout = found.cursors.map(cursor => {
@@ -102,6 +116,7 @@
       });
     }
     sync('start');
+    if (!current.positionsValid) return report();
     current.observer = new MutationObserver(() => sync('document-change'));
     current.observer.observe(document.documentElement, { childList: true, subtree: true });
     current.visibilityListener = () => sync('visibility-change');

@@ -155,7 +155,7 @@ async function finish() {
       if (!/Receiving end does not exist|Could not establish connection|No tab with id/.test(error.message)) throw error;
       state.cursorSuppression = { requested: true, safeForAnimation: false, lost: true, error: error.message };
     }
-    if (!state.cursorSuppression.safeForAnimation) state.warnings.push('Cursor suppression could not be verified throughout this clip; do not add an animated pointer.');
+    if (!state.cursorSuppression.safeForAnimation && state.cursorSuppression.tracking?.valid !== false) state.warnings.push('Cursor suppression could not be verified throughout this clip; do not add an animated pointer.');
   }
   completed = { blob: new Blob(state.chunks, { type: state.recorder.mimeType }), metadata: { captureStartedAt: state.started, animateCursor: state.args.animateCursor === true && !state.args.cursorOverlayProbe && !state.args.cursorProbe, cursorSuppression: state.cursorSuppression, cursorProbe: state.cursorProbe?.report, pointerSamples: state.cursorProbe || state.cursorSuppression ? state.pointerSamples : undefined, geometry: state.geometry, duration: (Date.now() - state.started) / 1000, events: state.events, samples: state.samples, callouts: state.callouts, preserveTiming: state.args.preserveTiming, pointerRendering: state.args.animateCursor && state.cursorSuppression?.safeForAnimation ? 'simulated-at-export' : state.cursorSuppression ? 'source-only-overlay-suppression-probe' : state.cursorProbe ? 'source-only-cursor-suppression-probe' : source === 'display' ? 'reconstructed-from-page-events' : 'native-with-background-fallback', warnings: state.warnings } };
   recording = null;

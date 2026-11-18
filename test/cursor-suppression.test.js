@@ -142,12 +142,38 @@ test('normal cursor tracking records input coordinates without diagnostic geomet
   assert.equal(result.tracking.points[1].x, 312);
   assert.equal(result.poses, undefined);
 });
-test('an unfamiliar cursor transform invalidates tracking even if the known shape returns', () => {
+test('unitless depth with a CSS variable in the transform tracks the Codex cursor', () => {
+  const page = fixture();
+  page.root.cursors[0].style.transform = 'translate3d(440.734px, 498.398px, 0) rotate(316deg) scale(1, 1) scale(var(--browser-agent-cursor-scale, 1))';
+  const report = page.control.start(false, true);
+  assert.equal(report.safeForAnimation, true);
+  assert.equal(report.tracking.valid, true);
+  assert.equal(report.tracking.points[0].x, 452.734);
+  assert.equal(report.tracking.points[0].y, 510.398);
+  page.control.stop();
+});
+test('an unreadable cursor position at start leaves the original cursor visible', () => {
+  const page = fixture();
+  page.root.cursors[0].style.transform = 'translate3d(100px, 200px, 1px)';
+  page.root.append = () => assert.fail('Suppression must only be installed after verifying cursor positions');
+  const start = page.control.start(false, true);
+  assert.equal(start.verified, false);
+  assert.equal(start.safeForAnimation, false);
+  assert.equal(start.tracking.valid, false);
+  const result = page.control.stop();
+  assert.equal(result.safeForAnimation, false);
+  assert.equal(result.tracking.valid, false);
+});
+test('an unreadable position during recording restores the original cursor for the rest of the clip', () => {
   const page = fixture();
   page.control.start(false, true);
   page.root.cursors[0].style.transform = 'matrix(1, 0, 0, 1, 10, 20)';
   page.observers[0].callback();
+  assert.equal(page.root.styles.length, 0);
+  assert.ok(page.observers.every(observer => observer.disconnected));
   page.root.cursors[0].style.transform = 'translate3d(300px, 400px, 0px)';
   page.observers[0].callback();
-  assert.equal(page.control.stop().tracking.valid, false);
+  const result = page.control.stop();
+  assert.equal(result.safeForAnimation, false);
+  assert.equal(result.tracking.valid, false);
 });
