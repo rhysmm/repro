@@ -2,19 +2,23 @@
 
 [Back to the README](../README.md)
 
-## In-app browser evidence
+## Browser capture workflows
 
-`capture_annotate` and `capture_export` process local files, independently of the Chrome extension. Install the Node dependencies and start the local service through the managed installer or `npm run setup` followed by `npm start`. The installer can print Chrome extension instructions; those steps apply only to the Chrome capture tools. Existing installations need `npm run service:restart` after updating the server. Reconnect the MCP client to discover the additional tools.
+Choose the capture method you prefer. A request for the current task takes precedence over a standing preference such as “Always use the Chrome extension for Repro captures.” If your preferred method is unavailable, the agent explains why and asks before switching. With no preference, use the current browser’s built-in capture when it can save the requested media to files Repro can access. Otherwise, use the Chrome extension. For the extension workflow, open the page in Chrome and follow its capture approval flow.
 
-In T3 Code, use `preview_recording_start`, normal `preview_act` actions, and `preview_recording_stop`. The stop tool returns a local video path. Use `preview_snapshot` with `save: true` for a screenshot. Use `preview_evaluate` to read target elements' `getBoundingClientRect()` values and `innerWidth`/`innerHeight`. Keep the viewport size fixed while recording. These tools do not control the browser themselves.
+### Saved browser captures
 
-For automatic input timestamps, call `capture_browser_script` with the recording start tool's `startedAt`. Evaluate its `installExpression` in the controlled tab before interacting. Before stopping, evaluate its `readExpression` and pass the returned `events` and `viewport` to `capture_export`, then evaluate `cleanupExpression`. The observer adds no visible page elements, never stores field values or ordinary typed text, and observes only the top-level document. Read events before navigating; navigation removes the observer. It keeps up to 2,000 input events per installation. For a callout, read `(Date.now() - Date.parse(startedAt)) / 1000` together with the target rectangles to capture its source timestamp.
+`capture_annotate` and `capture_export` process local files. Install the Node dependencies and start the local service through the managed installer or `npm run setup` followed by `npm start`. Follow the installer’s Chrome extension steps when using the extension workflow. Existing installations need `npm run service:restart` after updating the server. Reconnect the MCP client to discover the additional tools.
+
+Use your browser to save a screenshot or recording and measure the crop and annotation targets in CSS pixels. Keep the viewport size fixed during recording. For example, in T3 Code, use `preview_snapshot` with `save: true` for screenshots and `preview_recording_start` and `preview_recording_stop` for recordings. Use `preview_evaluate` to read target elements’ `getBoundingClientRect()` values and `innerWidth`/`innerHeight`.
+
+If your browser provides a recording start timestamp and JavaScript evaluation, call `capture_browser_script` with that `startedAt` for optional input timestamps. Evaluate its `installExpression` in the controlled tab before interacting. Before stopping, evaluate its `readExpression` and pass the returned `events` and `viewport` to `capture_export`, then evaluate `cleanupExpression`. The observer adds no visible page elements, never stores field values or ordinary typed text, and observes only the top-level document. Read events before navigating because navigation removes the observer. It keeps up to 2,000 input events per installation. For a callout, read `(Date.now() - Date.parse(startedAt)) / 1000` together with the target rectangles to capture its source timestamp.
 
 Annotate a saved screenshot:
 
 ```json
 {
-  "imagePath": "/absolute/path/from/preview_snapshot.png",
+  "imagePath": "/absolute/path/to/screenshot.png",
   "viewport": { "width": 1280, "height": 800 },
   "highlight": [
     { "target": { "x": 200, "y": 300, "width": 250, "height": 60 }, "label": "Saved result", "style": "box" }
@@ -28,7 +32,7 @@ Export a recorded interaction:
 
 ```json
 {
-  "videoPath": "/absolute/path/from/preview_recording_stop.mp4",
+  "videoPath": "/absolute/path/to/recording.mp4",
   "viewport": { "width": 1280, "height": 800 },
   "preserveTiming": false,
   "events": [{ "t": 1.2, "type": "click", "x": 240, "y": 320 }],
