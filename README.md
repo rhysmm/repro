@@ -2,6 +2,8 @@
 
 Let an agent save cropped screen recordings and annotated screenshots while it uses Chrome. Useful for bug reports, test evidence, and short demonstrations. Works alongside the agent’s existing browser controls.
 
+**T3 Code and other in-app browsers:** use the browser's own recording and screenshot tools, then pass the saved files to Repro's `capture_annotate` and `capture_export` tools. These tools draw the same boxes, arrows, labels, and reading pauses without Chrome or its extension. See [in-app browser evidence](docs/reference.md#in-app-browser-evidence).
+
 ## Examples
 
 Captured with Repro on the included demo page. Click an animation for the MP4.
