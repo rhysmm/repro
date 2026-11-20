@@ -21,12 +21,14 @@ Annotate a saved screenshot:
   "imagePath": "/absolute/path/to/screenshot.png",
   "viewport": { "width": 1280, "height": 800 },
   "highlight": [
-    { "target": { "x": 200, "y": 300, "width": 250, "height": 60 }, "label": "Saved result", "style": "box" }
+    { "target": { "x": 200, "y": 300, "width": 250, "height": 60 }, "label": "Saved result", "style": "box", "labelPlacement": "right" }
   ]
 }
 ```
 
 Pass that object to `capture_annotate`. Add an optional `region` rectangle to crop. Targets and regions use viewport CSS pixels. Supply `viewport` for captures taken at a higher display scale, and Repro preserves the source pixel density. Without it, coordinates use source image pixels. Labels wrap and move into a numbered legend when the crop is crowded. `style` supports `box` and `arrow`.
+
+Measure the visible card or control itself with `getBoundingClientRect()`. For text in a full-width container, measure the text range with `Range.getBoundingClientRect()`. Use a tight rectangle that encloses the complete target. Add `labelPlacement: "right"` to place a label beside the target when the space above contains evidence. If the right-side position is outside the crop or overlaps another highlight or label, Repro uses automatic placement, including the numbered legend when needed.
 
 Export a recorded interaction:
 

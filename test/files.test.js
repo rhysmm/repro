@@ -50,6 +50,25 @@ test('file MCP renders CSS-coordinate annotations at source resolution without a
   await assert.rejects(call('annotate', { imagePath, region: { x: 390, y: 0, width: 40, height: 20 } }), /crop must fit/);
 });
 
+test('file MCP can place a screenshot label to the right of its target', async t => {
+  const { directory, call } = await fixture(t);
+  const imagePath = path.join(directory, 'source.png');
+  await sharp({ create: { width: 400, height: 200, channels: 3, background: '#fff' } }).png().toFile(imagePath);
+
+  const target = { x: 30, y: 40, width: 40, height: 40 };
+  const result = await call('annotate', {
+    imagePath,
+    viewport: { width: 200, height: 100 },
+    highlight: [{ target, label: 'Date range', labelPlacement: 'right' }],
+  });
+
+  const { label } = result.annotations.items[0];
+  assert.ok(label.x > target.x + target.width);
+  assert.equal(label.y + label.height / 2, target.y + target.height / 2);
+  const pixel = await sharp(result.screenshot).extract({ left: label.x * 2 + 2, top: label.y * 2 + 2, width: 1, height: 1 }).removeAlpha().raw().toBuffer();
+  assert.deepEqual([...pixel], [0xc9, 0x12, 0x32]);
+});
+
 test('browser observer returned through MCP captures actual events without typed text and cleans up', async t => {
   const { call } = await fixture(t);
   const script = await call('browser_script', { startedAt: new Date(Date.now() - 1000).toISOString() });
